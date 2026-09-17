@@ -1,0 +1,11 @@
+# 统一换行符为 LF，避免跨平台 diff 噪声
+* text=auto eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.xml text eol=lf
+
+*.png binary
+*.jpg binary
+*.woff2 binary
