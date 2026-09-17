@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{page_title}}</title>
+<meta name="description" content="{{description}}">
+<meta name="author" content="{{site_title}}">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+</head>
+<body class="{{body_class}}">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">{{site_title}}</a>
+  <span class="spacer"></span>
+  <a href="{{repo}}">Skills</a>
+  <a href="{{github}}">GitHub</a>
+</nav>
+
+<main>
+{{content}}
+</main>
+
+<footer>
+  <p>© {{year}} {{site_title}}</p>
+</footer>
+
+</body>
+</html>

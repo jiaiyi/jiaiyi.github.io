@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版 · 甲乙的技术笔记</title>
+<meta name="description" content="pip install torch 一路顺利，torch.cuda.is_available() 却是 False。根因很可能是：PyPI（含国内镜像）上的 Windows torch wheel 根本就是 CPU 版。">
+<meta name="author" content="甲乙的技术笔记">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a href="https://github.com/jiaiyi">GitHub</a>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版</h1>
+  <div class="meta"><time>2026-09-17</time><span class="tag">PyTorch</span><span class="tag">Windows</span><span class="tag">环境配置</span></div>
+  <div class="content"><p>在 Windows 上装 PyTorch，最容易踩的坑不是装不上，而是<strong>装上了却用不了 GPU</strong> ——
+安装全程无报错，<code>import torch</code> 也正常，直到你写训练代码，<code>torch.cuda.is_available()</code>
+返回 <code>False</code> 才发现不对。</p>
+<p>显卡明明在，驱动也没问题。</p>
+<!--more-->
+
+<p>检查一下版本号，你会看到关键线索：</p>
+<div class="codehilite"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">__version__</span>
+<span class="s1">'2.11.0+cpu'</span>          <span class="c1"># ← 这个 +cpu 就是问题所在</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span>
+<span class="kc">False</span>
+</code></pre></div>
+
+<h2 id="pypi-windows-torch-wheel-cpu">根因：PyPI 上的 Windows torch wheel 是 CPU 版</h2>
+<p>这一点很多人不知道：<strong>PyPI（包括清华、阿里等国内镜像）上提供的 Windows <code>torch</code>
+wheel 只有约 190 MB —— 那个体积就是 CPU 版。</strong></p>
+<p>GPU 版不在 PyPI 上，只在 PyTorch 官方源 <code>download.pytorch.org</code>，体积 <strong>2.5 GB 以上</strong>。</p>
+<p>于是就有了这个局面：</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>torch<span class="w"> </span>torchvision<span class="w"> </span>torchaudio<span class="w">          </span><span class="c1"># 一切正常</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import torch; print(torch.__version__)"</span>
+<span class="c1"># 2.11.0+cpu        ← 关键就是这个 +cpu</span>
+</code></pre></div>
+
+<p>官方 README 里那句轻描淡写的「Windows 平台需要额外手动安装 GPU 版本的 PyTorch
+依赖包」，说的就是这件事。</p>
+<hr>
+<h2 id="wheel">不下载就能判断 wheel 是哪种</h2>
+<p>下载 2.5 GB 才发现装错，代价太大。可以直接查 PyPI 的 JSON 接口看体积，秒出结果：</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">json</span><span class="o">,</span><span class="w"> </span><span class="nn">urllib.request</span>
+
+<span class="n">d</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span>
+    <span class="s2">"https://pypi.tuna.tsinghua.edu.cn/pypi/torch/json"</span><span class="p">))</span>
+
+<span class="k">for</span> <span class="n">v</span><span class="p">,</span> <span class="n">files</span> <span class="ow">in</span> <span class="n">d</span><span class="p">[</span><span class="s2">"releases"</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s2">"win_amd64"</span> <span class="ow">in</span> <span class="n">f</span><span class="p">[</span><span class="s2">"filename"</span><span class="p">]:</span>
+            <span class="n">mb</span> <span class="o">=</span> <span class="n">f</span><span class="p">[</span><span class="s2">"size"</span><span class="p">]</span> <span class="o">/</span> <span class="mi">1024</span> <span class="o">/</span> <span class="mi">1024</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">f</span><span class="p">[</span><span class="s2">"filename"</span><span class="p">],</span> <span class="s2">"</span><span class="si">%.0f</span><span class="s2"> MB"</span> <span class="o">%</span> <span class="n">mb</span><span class="p">,</span>
+                  <span class="s2">"CUDA版"</span> <span class="k">if</span> <span class="n">mb</span> <span class="o">&gt;</span> <span class="mi">800</span> <span class="k">else</span> <span class="s2">"CPU版"</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出里会看到 Windows 轮子清一色是 190 MB 上下 —— 全是 CPU 版。</p>
+<blockquote>
+<p>顺带一个坑：清华大学镜像支持 <code>/pypi/&lt;pkg&gt;/json</code>，但<strong>不支持</strong>
+<code>/pypi/&lt;pkg&gt;/&lt;version&gt;/json</code>（单版本那个路径会 404）。别在那儿浪费时间。</p>
+</blockquote>
+<hr>
+<h2 id="_1">版本必须严格配套</h2>
+<p>装 GPU 版时，<code>torch</code> / <code>torchvision</code> / <code>torchaudio</code> 三者的版本要严格对应，否则会
+<strong>静默降级成 CPU 算子</strong> —— 不报错，但跑起来是 CPU 速度。</p>
+<table>
+<thead>
+<tr>
+<th>torch</th>
+<th>torchvision</th>
+<th>torchaudio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.11.x</td>
+<td>0.26.0</td>
+<td>2.11.0</td>
+</tr>
+</tbody>
+</table>
+<p><strong>验证方式不是看 install 是否成功，而是看版本字符串有没有 <code>+cuXXX</code> 后缀：</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torchvision</span><span class="o">,</span><span class="w"> </span><span class="nn">torchaudio</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">__version__</span><span class="p">,</span> <span class="n">torchvision</span><span class="o">.</span><span class="n">__version__</span><span class="p">,</span> <span class="n">torchaudio</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span>
+
+<span class="c1"># 正确: 2.11.0+cu128  0.26.0+cu128  2.11.0+cu128</span>
+<span class="c1"># 错误: 2.11.0+cu128  0.26.0+cpu   2.11.0+cpu     ← 混进了 CPU 版</span>
+</code></pre></div>
+
+<p>第二种情况特别隐蔽：<code>torch</code> 装对了，但 <code>torchvision</code> 是 CPU 版。这种情况下
+<code>cuda.is_available()</code> 可能还是 <code>True</code>，但实际跑到卷积就出问题。</p>
+<hr>
+<h2 id="_2">正确的安装命令</h2>
+<p>要装 GPU 版，必须<strong>显式指定 PyTorch 官方源</strong>，而不是让它去 PyPI 或国内镜像找：</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"torchvision==0.26.0+cu128"</span><span class="w"> </span><span class="s2">"torchaudio==2.11.0+cu128"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/cu128<span class="w"> </span>--no-deps
+</code></pre></div>
+
+<p>几个要点：</p>
+<ul>
+<li><strong><code>--index-url</code> 而不是 <code>--extra-index-url</code></strong>：用后者时，如果同时配了清华镜像，
+  uv 可能优先拿到 CPU 轮子。把它设成唯一的 index 才稳。</li>
+<li><strong><code>--no-deps</code></strong>：避免它顺带重解析整个依赖树，把别的包也搅动一遍。</li>
+<li>国内下载 2.5 GB 会很慢，建议挂代理。</li>
+</ul>
+<p>查某个源上到底有哪些可用版本（<code>curl</code> 可能因为代理环境变量而失败，用 Python 抓更稳）：</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">urllib.request</span><span class="o">,</span><span class="w"> </span><span class="nn">re</span>
+
+<span class="n">html</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span>
+    <span class="s2">"https://download.pytorch.org/whl/cu128/torchvision/"</span><span class="p">,</span>
+    <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">"User-Agent"</span><span class="p">:</span> <span class="s2">"uv/0.12.7"</span><span class="p">}))</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span>
+    <span class="sa">r</span><span class="s2">"torchvision-([\d.]+)%2Bcu128-cp311-cp311-win_amd64\.whl"</span><span class="p">,</span> <span class="n">html</span><span class="p">))))</span>
+</code></pre></div>
+
+<p>注意 URL 里的 <code>%2B</code> 就是 <code>+</code> 的转义，正则里别写错。</p>
+<hr>
+<h2 id="_3">小结</h2>
+<table>
+<thead>
+<tr>
+<th>检查项</th>
+<th>正确</th>
+<th>错误信号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>wheel 体积</td>
+<td>2.5 GB+</td>
+<td>190 MB</td>
+</tr>
+<tr>
+<td>版本字符串</td>
+<td><code>2.11.0+cu128</code></td>
+<td><code>2.11.0+cpu</code></td>
+</tr>
+<tr>
+<td>三个包是否一致</td>
+<td>全是 <code>+cuXXX</code></td>
+<td>混着 <code>+cpu</code></td>
+</tr>
+<tr>
+<td><code>cuda.is_available()</code></td>
+<td><code>True</code></td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+<p>最省事的排查顺序：<strong>先看 <code>torch.__version__</code> 有没有 <code>+cpu</code></strong> ——
+有的话不用继续查了，直接去装官方源的 GPU 版。</p></div>
+</article>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记</p>
+</footer>
+
+</body>
+</html>

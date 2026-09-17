@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>甲乙的技术笔记</title>
+  <link>https://jiaiyi.github.io</link>
+  <description>Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。</description>
+  <item>
+    <title>装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版</title>
+    <link>https://jiaiyi.github.io/posts/pytorch-cpu-wheel.html</link>
+    <guid>https://jiaiyi.github.io/posts/pytorch-cpu-wheel.html</guid>
+    <description>pip install torch 一路顺利，torch.cuda.is_available() 却是 False。根因很可能是：PyPI（含国内镜像）上的 Windows torch wheel 根本就是 CPU 版。</description>
+  </item>
+  <item>
+    <title>Milvus 报 code=1100？两类 schema 里看不出来的约束</title>
+    <link>https://jiaiyi.github.io/posts/milvus-code-1100.html</link>
+    <guid>https://jiaiyi.github.io/posts/milvus-code-1100.html</guid>
+    <description>往 Milvus 插数据报 more fieldData has pass in / varchar field got nil，对着 schema 反复检查却找不出问题。这两条约束不在 schema 定义里，只有真插一次才会炸出来。</description>
+  </item>
+</channel>
+</rss>

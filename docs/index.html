@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>甲乙的技术笔记</title>
+<meta name="description" content="Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。">
+<meta name="author" content="甲乙的技术笔记">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+</head>
+<body class="page-index">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a href="https://github.com/jiaiyi">GitHub</a>
+</nav>
+
+<main>
+
+<header class="hero">
+  <h1>甲乙的技术笔记</h1>
+  <p class="tagline">真实踩过的坑，比文档有用</p>
+  <p class="desc">Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。</p>
+  <p class="links">
+    <a href="https://github.com/jiaiyi/agent-skills">skill 仓库</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/jiaiyi">GitHub</a>
+    <span class="sep">·</span>
+    <a href="feed.xml">RSS</a>
+  </p>
+</header>
+<section class="post-list">
+<article class="card">
+  <h2><a href="posts/pytorch-cpu-wheel.html">装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版</a></h2>
+  <div class="card-meta"><time>2026-09-17</time><span class="tags"><span class="tag">PyTorch</span><span class="tag">Windows</span><span class="tag">环境配置</span></span></div>
+  <div class="card-summary"><p>在 Windows 上装 PyTorch，最容易踩的坑不是装不上，而是<strong>装上了却用不了 GPU</strong> ——
+安装全程无报错，<code>import torch</code> 也正常，直到你写训练代码，<code>torch.cuda.is_available()</code>
+返回 <code>False</code> 才发现不对。</p>
+<p>显卡明明在，驱动也没问题。</p></div>
+</article>
+
+<article class="card">
+  <h2><a href="posts/milvus-code-1100.html">Milvus 报 code=1100？两类 schema 里看不出来的约束</a></h2>
+  <div class="card-meta"><time>2026-09-17</time><span class="tags"><span class="tag">Milvus</span><span class="tag">向量数据库</span><span class="tag">Python</span></span></div>
+  <div class="card-summary"><p>往 Milvus 插数据时遇到 <code>MilvusException (code=1100)</code>，第一反应通常是去翻 schema
+核对字段。但下面这两条约束<strong>在 schema 定义里根本看不出来</strong> —— 声明得完全合法，
+insert 的时候才报错。</p>
+<p>我在这上面来回折腾过，这里一次说清。</p></div>
+</article>
+
+</section>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记</p>
+</footer>
+
+</body>
+</html>

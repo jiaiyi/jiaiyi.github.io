@@ -1,0 +1,19 @@
+# 构建产物（由 build.py 生成，但需要提交 —— GitHub Pages 直接发布它）
+# 这里不忽略 docs/，只忽略临时文件。
+
+# 预览截图
+_shots/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

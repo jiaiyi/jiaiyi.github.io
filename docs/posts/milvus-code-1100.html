@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milvus 报 code=1100？两类 schema 里看不出来的约束 · 甲乙的技术笔记</title>
+<meta name="description" content="往 Milvus 插数据报 more fieldData has pass in / varchar field got nil，对着 schema 反复检查却找不出问题。这两条约束不在 schema 定义里，只有真插一次才会炸出来。">
+<meta name="author" content="甲乙的技术笔记">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a href="https://github.com/jiaiyi">GitHub</a>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>Milvus 报 code=1100？两类 schema 里看不出来的约束</h1>
+  <div class="meta"><time>2026-09-17</time><span class="tag">Milvus</span><span class="tag">向量数据库</span><span class="tag">Python</span></div>
+  <div class="content"><p>往 Milvus 插数据时遇到 <code>MilvusException (code=1100)</code>，第一反应通常是去翻 schema
+核对字段。但下面这两条约束<strong>在 schema 定义里根本看不出来</strong> —— 声明得完全合法，
+insert 的时候才报错。</p>
+<p>我在这上面来回折腾过，这里一次说清。</p>
+<!--more-->
+
+<h2 id="_1">现象</h2>
+<p>两条报错长这样：</p>
+<div class="codehilite"><pre><span></span><code>MilvusException (code=1100, message=more fieldData has pass in:
+                 invalid parameter[expected=18][actual=19])
+
+MilvusException (code=1100, message=varchar field 'xxx' is illegal,
+                 array type mismatch: invalid parameter[expected=need string array][actual=got nil])
+</code></pre></div>
+
+<p>第一条看着像「字段传多了」，第二条像「类型不对」。但如果你盯着 schema 看，
+会发现字段数量对得上、类型也对。</p>
+<p>问题出在别处。</p>
+<hr>
+<h2 id="auto_idtrue">坑一：<code>auto_id=True</code> 的主键不能再显式传值</h2>
+<p>建集合时如果主键声明了 <code>auto_id=True</code>，那么 insert 时<strong>这个字段必须整个不传</strong>。</p>
+<p>我最初的想法是「反正会自动生成，那我传 <code>None</code> 占个位总行吧」——</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 不行</span>
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">"chunk_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"..."</span><span class="p">,</span> <span class="s2">"embedding"</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">]}]</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># 也不行</span>
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">"chunk_id"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"..."</span><span class="p">,</span> <span class="s2">"embedding"</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">]}]</span>
+</code></pre></div>
+
+<p>两种都会报 <code>more fieldData has pass in</code>。</p>
+<p><strong>怎么读这个报错</strong>：</p>
+<div class="codehilite"><pre><span></span><code>expected=18   ← 声明字段数 + 1
+actual=19     ← 实际传的字段数
+</code></pre></div>
+
+<p>那个 <code>+1</code> 容易让人困惑：如果你开了 <code>enable_dynamic_field=True</code>，Milvus 内部会多一个
+<code>$meta</code> 字段，所以 <code>expected</code> 比你数出来的字段数多一个。</p>
+<p>而 <code>actual</code> 比 <code>expected</code> 多出来的那一个，就是你显式传的主键。</p>
+<p><strong>结论：<code>None</code> 和 <code>0</code> 都不算「不传」。</strong> Python 的 dict 里只要这个 key 存在，
+就会被算进字段数。必须 <code>pop</code> 掉。</p>
+<hr>
+<h2 id="varchar-none">坑二：VARCHAR 字段不接受 <code>None</code></h2>
+<p>这条更隐蔽，因为它<strong>适用于所有标量字段</strong>，不只是你重点关注的那几个。</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 报错：varchar field 'xxx' is illegal,</span>
+<span class="c1">#       array type mismatch: invalid parameter[expected=need string array][actual=got nil]</span>
+</code></pre></div>
+
+<p>只要某个 VARCHAR 字段的值是 <code>None</code>，整行就插不进去。</p>
+<p>真实场景里很容易踩：你有个可选字段（比如 <code>parent_title</code>、<code>summary</code>、<code>source_url</code>），
+大部分数据有值，某一条恰好没有 —— 于是 <code>None</code> 混进了批次，整批 insert 失败。</p>
+<p><code>None</code> 必须转成空字符串 <code>""</code>。</p>
+<hr>
+<h2 id="_2">统一清洗写法</h2>
+<p>关键点是<strong>把它放在唯一的写入点</strong> —— 所有插入都经过的那个函数。
+散落各处做清洗，早晚会漏掉一条路径。</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">clean_rows_for_milvus</span><span class="p">(</span><span class="n">chunks</span><span class="p">):</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">:</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>              <span class="c1"># ★ 必须复制，见下一节</span>
+        <span class="n">row</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"chunk_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>      <span class="c1"># auto_id 主键不能显式传</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">row</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">row</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="s2">""</span>            <span class="c1"># VARCHAR 不吃 None</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rows</span>
+</code></pre></div>
+
+<p>插入之后，用返回的 ids 把主键回填到原始对象上 —— 后续还要用这个 id 做关联：</p>
+<div class="codehilite"><pre><span></span><code><span class="n">insert_result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">collection_name</span><span class="o">=</span><span class="n">NAME</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">rows</span><span class="p">)</span>
+<span class="n">ids</span> <span class="o">=</span> <span class="n">insert_result</span><span class="p">[</span><span class="s2">"ids"</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chunks</span><span class="p">):</span>
+    <span class="n">chunk</span><span class="p">[</span><span class="s2">"chunk_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">ids</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+</code></pre></div>
+
+<hr>
+<h2 id="dictchunk">一个容易写错的地方：<code>dict(chunk)</code> 不能省</h2>
+<p>上面那行 <code>row = dict(chunk)</code> 看着像是多余的防御性代码，其实是必须的。</p>
+<p>如果偷懒写成：</p>
+<div class="codehilite"><pre><span></span><code><span class="n">row</span> <span class="o">=</span> <span class="n">chunk</span>                      <span class="c1"># ✗</span>
+<span class="n">row</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"chunk_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>        <span class="c1"># 这一行把原始对象的主键也删了</span>
+</code></pre></div>
+
+<p>那么 <code>pop</code> 作用在<strong>同一个对象</strong>上，原始 chunk 的 <code>chunk_id</code> 被删掉了。
+末尾那句回填 <code>chunk["chunk_id"] = ids[i]</code> 虽然会执行，但你之前已经
+把 chunk 里原有的值抹掉了 —— 如果这段代码在重试路径上被调用第二次，
+行为和第一次就不一样了。</p>
+<p><strong>这是个不报错但结果错的 bug</strong>，比直接抛异常麻烦得多。</p>
+<p>一行 <code>dict()</code> 就能避免。</p>
+<hr>
+<h2 id="_3">小结</h2>
+<table>
+<thead>
+<tr>
+<th>约束</th>
+<th>触发条件</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto_id</code> 主键不可显式传</td>
+<td>字段以 <code>None</code> 或 <code>0</code> 存在</td>
+<td><code>row.pop("chunk_id", None)</code></td>
+</tr>
+<tr>
+<td>VARCHAR 不接受 <code>None</code></td>
+<td>任一标量字段为 <code>None</code></td>
+<td><code>None</code> → <code>""</code></td>
+</tr>
+</tbody>
+</table>
+<p>两条都属于「不在 schema 里，插一次才知道」的类型。如果你正在写 Milvus 的写入层，
+建议一开始就把清洗函数收敛到单个入口，别等到踩了再回头重构。</p></div>
+</article>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记</p>
+</footer>
+
+</body>
+</html>
