@@ -39,21 +39,23 @@
 <main>
 
 <header class="hero">
+  <p class="hero-badge">技术笔记</p>
   <h1>甲乙的技术笔记</h1>
   <p class="tagline">真实踩过的坑，比文档有用</p>
   <p class="desc">Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。</p>
-  <p class="links">
-    <a href="https://github.com/jiaiyi/agent-skills">skill 仓库</a>
-    <span class="sep">·</span>
+  <nav class="hero-links">
+    <a href="https://github.com/jiaiyi/agent-skills">Skills 仓库</a>
     <a href="https://github.com/jiaiyi">GitHub</a>
-    <span class="sep">·</span>
     <a href="feed.xml">RSS</a>
-  </p>
+  </nav>
 </header>
 <section class="post-list">
 <article class="card">
+  <div class="card-meta">
+    <time>2026-09-18</time>
+    <span class="tags"><span class="tag">WSL</span><span class="tag">代理</span><span class="tag">Windows</span></span>
+  </div>
   <h2><a href="posts/wsl-proxy.html">WSL 里 curl 一片空白，Windows 却好得很</a></h2>
-  <div class="card-meta"><time>2026-09-18</time><span class="tags"><span class="tag">WSL</span><span class="tag">代理</span><span class="tag">Windows</span></span></div>
   <div class="card-summary"><p>如果你在 Windows 上开了代理，浏览器一切正常，但切到 WSL 里执行 <code>curl</code> 得到的是<strong>一片空白</strong> ——
 不是超时、不是报错，是真的一行输出都没有，连响应头都不打印。</p>
 <p><code>pip</code> / <code>uv</code> 的表现则是卡在第一个包上不动。</p>
@@ -61,8 +63,11 @@
 </article>
 
 <article class="card">
+  <div class="card-meta">
+    <time>2026-09-18</time>
+    <span class="tags"><span class="tag">Windows</span><span class="tag">排查</span><span class="tag">工具链</span></span>
+  </div>
   <h2><a href="posts/windows-locked-folder.html">Windows 说「文件夹正在使用」，却不告诉你是谁</a></h2>
-  <div class="card-meta"><time>2026-09-18</time><span class="tags"><span class="tag">Windows</span><span class="tag">排查</span><span class="tag">工具链</span></span></div>
   <div class="card-summary"><p>想重命名或删除一个文件夹，Windows 弹出一句：</p>
 <div class="codehilite"><pre><span></span><code>操作无法完成，因为其中的文件夹或文件已在另一程序中打开
 </code></pre></div>
@@ -72,8 +77,11 @@
 </article>
 
 <article class="card">
+  <div class="card-meta">
+    <time>2026-09-18</time>
+    <span class="tags"><span class="tag">Python</span><span class="tag">OOXML</span><span class="tag">文档处理</span></span>
+  </div>
   <h2><a href="posts/docx-ooxml-pitfalls.html">docx 转 Markdown：标题层级不在样式名里，代码块也不在</a></h2>
-  <div class="card-meta"><time>2026-09-18</time><span class="tags"><span class="tag">Python</span><span class="tag">OOXML</span><span class="tag">文档处理</span></span></div>
   <div class="card-summary"><p><code>.docx</code> 本质是个 zip，里面是 OOXML。用 Python 解析它不难，难的是<strong>你不知道文档里
 信息到底是怎么存的</strong> —— 按直觉写的代码往往「不报错，但结果全错」。</p>
 <p>而且这些错误的症状通常<strong>出现在下游</strong>（切分、检索、显示），离解析这一步很远，
@@ -82,8 +90,11 @@
 </article>
 
 <article class="card">
+  <div class="card-meta">
+    <time>2026-09-17</time>
+    <span class="tags"><span class="tag">PyTorch</span><span class="tag">Windows</span><span class="tag">环境配置</span></span>
+  </div>
   <h2><a href="posts/pytorch-cpu-wheel.html">装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版</a></h2>
-  <div class="card-meta"><time>2026-09-17</time><span class="tags"><span class="tag">PyTorch</span><span class="tag">Windows</span><span class="tag">环境配置</span></span></div>
   <div class="card-summary"><p>在 Windows 上装 PyTorch，最容易踩的坑不是装不上，而是<strong>装上了却用不了 GPU</strong> ——
 安装全程无报错，<code>import torch</code> 也正常，直到你写训练代码，<code>torch.cuda.is_available()</code>
 返回 <code>False</code> 才发现不对。</p>
@@ -91,8 +102,11 @@
 </article>
 
 <article class="card">
+  <div class="card-meta">
+    <time>2026-09-17</time>
+    <span class="tags"><span class="tag">Milvus</span><span class="tag">向量数据库</span><span class="tag">Python</span></span>
+  </div>
   <h2><a href="posts/milvus-code-1100.html">Milvus 报 code=1100？两类 schema 里看不出来的约束</a></h2>
-  <div class="card-meta"><time>2026-09-17</time><span class="tags"><span class="tag">Milvus</span><span class="tag">向量数据库</span><span class="tag">Python</span></span></div>
   <div class="card-summary"><p>往 Milvus 插数据时遇到 <code>MilvusException (code=1100)</code>，第一反应通常是去翻 schema
 核对字段。但下面这两条约束<strong>在 schema 定义里根本看不出来</strong> —— 声明得完全合法，
 insert 的时候才报错。</p>

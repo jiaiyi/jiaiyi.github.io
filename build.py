@@ -199,16 +199,15 @@ def build(site: dict) -> list[Post]:
         body_class="page-index",
         content=f"""
 <header class="hero">
+  <p class="hero-badge">技术笔记</p>
   <h1>{html.escape(site["title"])}</h1>
   <p class="tagline">{html.escape(site["tagline"])}</p>
   <p class="desc">{html.escape(site["description"])}</p>
-  <p class="links">
-    <a href="{site["repo"]}">skill 仓库</a>
-    <span class="sep">·</span>
+  <nav class="hero-links">
+    <a href="{site["repo"]}">Skills 仓库</a>
     <a href="{site["github"]}">GitHub</a>
-    <span class="sep">·</span>
     <a href="feed.xml">RSS</a>
-  </p>
+  </nav>
 </header>
 <section class="post-list">
 {list_html}
