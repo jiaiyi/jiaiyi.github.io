@@ -6,17 +6,34 @@
 <title>装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版 · 甲乙的技术笔记</title>
 <meta name="description" content="pip install torch 一路顺利，torch.cuda.is_available() 却是 False。根因很可能是：PyPI（含国内镜像）上的 Windows torch wheel 根本就是 CPU 版。">
 <meta name="author" content="甲乙的技术笔记">
-<link rel="stylesheet" href="/static/style.css">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
 <link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
 <link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 </head>
 <body class="page-post">
 
 <nav class="topnav">
   <a class="brand" href="/index.html">甲乙的技术笔记</a>
   <span class="spacer"></span>
-  <a href="https://github.com/jiaiyi/agent-skills">Skills</a>
-  <a href="https://github.com/jiaiyi">GitHub</a>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
 </nav>
 
 <main>
@@ -24,7 +41,12 @@
 <article class="post">
   <a class="back" href="../index.html">← 返回列表</a>
   <h1>装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版</h1>
-  <div class="meta"><time>2026-09-17</time><span class="tag">PyTorch</span><span class="tag">Windows</span><span class="tag">环境配置</span></div>
+  <div class="meta">
+    <time>2026-09-17</time>
+    <span class="sep">·</span>
+    <span class="reading">6 分钟读完</span>
+    <span class="tag">PyTorch</span><span class="tag">Windows</span><span class="tag">环境配置</span>
+  </div>
   <div class="content"><p>在 Windows 上装 PyTorch，最容易踩的坑不是装不上，而是<strong>装上了却用不了 GPU</strong> ——
 安装全程无报错，<code>import torch</code> 也正常，直到你写训练代码，<code>torch.cuda.is_available()</code>
 返回 <code>False</code> 才发现不对。</p>
@@ -164,11 +186,54 @@ python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import
 <p>最省事的排查顺序：<strong>先看 <code>torch.__version__</code> 有没有 <code>+cpu</code></strong> ——
 有的话不用继续查了，直接去装官方源的 GPU 版。</p></div>
 </article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#pypi-windows-torch-wheel-cpu">根因：PyPI 上的 Windows torch wheel 是 CPU 版</a></li>
+<li><a href="#wheel">不下载就能判断 wheel 是哪种</a></li>
+<li><a href="#_1">版本必须严格配套</a></li>
+<li><a href="#_2">正确的安装命令</a></li>
+<li><a href="#_3">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
 </main>
 
 <footer>
-  <p>© 2026 甲乙的技术笔记</p>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
 </footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
 
 </body>
 </html>

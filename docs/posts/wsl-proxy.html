@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WSL 里 curl 一片空白，Windows 却好得很 · 甲乙的技术笔记</title>
+<meta name="description" content="Windows 里 curl 畅通无阻，WSL 里 curl 连一行响应头都不打印，pip 卡在第一个包上不动。根因是代理只绑在回环地址上，而 WSL 住在另一个网络命名空间里。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>WSL 里 curl 一片空白，Windows 却好得很</h1>
+  <div class="meta">
+    <time>2026-09-18</time>
+    <span class="sep">·</span>
+    <span class="reading">7 分钟读完</span>
+    <span class="tag">WSL</span><span class="tag">代理</span><span class="tag">Windows</span>
+  </div>
+  <div class="content"><p>如果你在 Windows 上开了代理，浏览器一切正常，但切到 WSL 里执行 <code>curl</code> 得到的是<strong>一片空白</strong> ——
+不是超时、不是报错，是真的一行输出都没有，连响应头都不打印。</p>
+<p><code>pip</code> / <code>uv</code> 的表现则是卡在第一个包上不动。</p>
+<p>这个现象很有辨识度，值得先记住它。</p>
+<!--more-->
+
+<h2 id="_1">先理解为什么会「完全没输出」</h2>
+<p>Windows 上跑的代理（Clash、mihomo 之类）默认只监听 <code>127.0.0.1:7890</code>。</p>
+<p>而 <strong>WSL2 默认是 NAT 模式 —— 它有自己的网络命名空间</strong>，里面的 <code>127.0.0.1</code> 指的是
+WSL 自己，不是 Windows。所以 WSL 去连 <code>127.0.0.1:7890</code> 时，那个端口在它的世界里根本
+不存在。</p>
+<p>连不上，<code>curl</code> 就静默退出 —— 这就是「没有任何输出」的来源。</p>
+<p>WSL 自己其实会提示这一点，只是容易被忽略：</p>
+<div class="codehilite"><pre><span></span><code>检测到 localhost 代理配置，但未镜像到 WSL。NAT 模式下的 WSL 不支持 localhost 代理。
+</code></pre></div>
+
+<hr>
+<h2 id="_2">一条命令定性</h2>
+<p>在 <strong>Windows 侧</strong>执行：</p>
+<div class="codehilite"><pre><span></span><code>netstat<span class="w"> </span>-an<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>:7890
+</code></pre></div>
+
+<p>结果只有两种，对应两条不同的路：</p>
+<table>
+<thead>
+<tr>
+<th>输出</th>
+<th>含义</th>
+<th>怎么办</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>127.0.0.1:7890 LISTENING</code></td>
+<td>只绑回环，<strong>WSL 连不上</strong></td>
+<td>走解法 A 或 B</td>
+</tr>
+<tr>
+<td><code>0.0.0.0:7890 LISTENING</code></td>
+<td>已放开局域网</td>
+<td>只需在 WSL 里指向网关（解法 B 第 3 步）</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="amirrored-autoproxy">解法 A（推荐）：mirrored + autoProxy</h2>
+<p>WSL 的原生方案。编辑 <code>C:\Users\&lt;你的用户名&gt;\.wslconfig</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="k">[wsl2]</span>
+<span class="na">networkingMode</span><span class="o">=</span><span class="s">mirrored</span>
+<span class="na">autoProxy</span><span class="o">=</span><span class="s">true</span>
+</code></pre></div>
+
+<p><strong>注意键名是 <code>networkingMode</code>（带 <code>ing</code>）。</strong> 写成 <code>networkMode</code> 会被 WSL 判定为
+「未知键」然后<strong>静默忽略</strong> —— 你会以为配了，实际没生效。</p>
+<p><code>mirrored</code> 模式下 WSL 与 Windows 共享网络接口，所以 <code>127.0.0.1:7890</code> 直接就是 Clash 的端口。</p>
+<p>前提：<strong>Windows 侧的系统代理必须开着</strong> —— <code>autoProxy</code> 是从系统代理设置继承的。确认一下：</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">winreg</span>
+
+<span class="n">k</span> <span class="o">=</span> <span class="n">winreg</span><span class="o">.</span><span class="n">OpenKey</span><span class="p">(</span><span class="n">winreg</span><span class="o">.</span><span class="n">HKEY_CURRENT_USER</span><span class="p">,</span>
+                   <span class="sa">r</span><span class="s2">"Software\Microsoft\Windows\CurrentVersion\Internet Settings"</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"ProxyEnable"</span><span class="p">,</span> <span class="s2">"ProxyServer"</span><span class="p">,</span> <span class="s2">"ProxyOverride"</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="s2">"="</span><span class="p">,</span> <span class="n">winreg</span><span class="o">.</span><span class="n">QueryValueEx</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">n</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="s2">"= (未设置)"</span><span class="p">)</span>
+
+<span class="c1"># 期望看到:</span>
+<span class="c1">#   ProxyEnable = 1</span>
+<span class="c1">#   ProxyServer = '127.0.0.1:7890'</span>
+</code></pre></div>
+
+<p>然后 <code>wsl --shutdown</code>，重开终端。</p>
+<p>⚠️ <strong>不要再手动 export 代理变量</strong>。mirrored 模式下 <code>127.0.0.1:7890</code> 已经是正确的地址，
+手动设置反而会把它指向错误的地方。</p>
+<p>验证：</p>
+<div class="codehilite"><pre><span></span><code>env<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>proxy<span class="w">                                    </span><span class="c1"># autoProxy 会自动注入</span>
+curl<span class="w"> </span>-sI<span class="w"> </span>--max-time<span class="w"> </span><span class="m">10</span><span class="w"> </span>https://pypi.org/simple/<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-1<span class="w">   </span><span class="c1"># 期望 HTTP/2 200</span>
+</code></pre></div>
+
+<hr>
+<h2 id="bnat">解法 B（NAT 模式兜底）</h2>
+<p>如果你的环境不方便开 mirrored，就得让代理监听在能被 WSL 访问的地址上。</p>
+<p><strong>第 1 步：打开代理的 <code>allow-lan</code>。</strong></p>
+<p>这一步有个坑：<strong>Clash Party 界面上的开关不一定写进内核配置。</strong> 我实测界面上打开之后，
+<code>mihomo.yaml</code> 里仍然是 <code>false</code>。直接改文件更可靠：</p>
+<div class="codehilite"><pre><span></span><code>%APPDATA%\mihomo-party\mihomo.yaml        # 内核实际生效的配置
+%APPDATA%\mihomo-party\work\config.yaml   # 工作目录副本
+</code></pre></div>
+
+<p>两处都把 <code>allow-lan: false</code> 改成 <code>true</code>，然后<strong>重启内核</strong>才生效。</p>
+<p><strong>第 2 步：确认绑定真的变了。</strong></p>
+<div class="codehilite"><pre><span></span><code>netstat<span class="w"> </span>-an<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>:7890<span class="w">     </span><span class="c1"># 应从 127.0.0.1 变成 0.0.0.0</span>
+</code></pre></div>
+
+<p><strong>第 3 步：WSL 里指向网关。</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">host_ip</span><span class="o">=</span><span class="k">$(</span>ip<span class="w"> </span>route<span class="w"> </span>show<span class="w"> </span>default<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">'{print $3}'</span><span class="k">)</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">https_proxy</span><span class="o">=</span><span class="s2">"http://</span><span class="nv">$host_ip</span><span class="s2">:7890"</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">http_proxy</span><span class="o">=</span><span class="s2">"</span><span class="nv">$https_proxy</span><span class="s2">"</span>
+
+curl<span class="w"> </span>-sI<span class="w"> </span>--max-time<span class="w"> </span><span class="m">10</span><span class="w"> </span>https://pypi.org/simple/<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-1
+</code></pre></div>
+
+<p><code>host_ip</code> 就是 Windows 上那块 <code>vEthernet (WSL)</code> 网卡的地址，形如 <code>172.18.128.1</code>。</p>
+<hr>
+<h2 id="_3">几个容易踩的细节</h2>
+<ul>
+<li><strong><code>export</code> 不跨会话。</strong> 新开一个 WSL 终端，<code>echo $host_ip</code> 就是空的 —— 变量只在当前
+  会话有效。要么每次重设，要么写进 <code>~/.bashrc</code>，要么直接用解法 A 一劳永逸。</li>
+<li><strong>别用 <code>ping</code> 测代理通不通。</strong> <code>PROXY</code> 系列环境变量只对 HTTP 客户端有效，<code>ping</code> 走的是
+  ICMP，根本不经过代理 —— 你会得到一个假的「不通」。统一用 <code>curl -I</code> 验证。</li>
+<li><strong>Clash 的 <code>ProxyOverride</code> 里看到 <code>172.16.*~172.31.*</code> 不用动。</strong> 那是自动排除
+  WSL/VMware 网段用的，是对的。</li>
+<li><strong>如果 <code>allow-lan</code> 放开了还是不通</strong>，再看一层：新版 WSL 的网卡名会带
+  <code>(Hyper-V firewall)</code>，防火墙策略可能仍在拦。这时候在 Windows 侧查
+  <code>ipconfig</code> 确认网段，再用 <code>netstat</code> 确认绑定、<code>tasklist</code> 确认进程是否还活着。</li>
+</ul>
+<hr>
+<h2 id="_4">小结</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WSL 里 curl 完全无输出</td>
+<td>基本可以直接锁定是代理没镜像进去</td>
+</tr>
+<tr>
+<td>Windows 侧 <code>netstat</code> 显示 <code>127.0.0.1:7890</code></td>
+<td>只绑回环，WSL 天然连不上</td>
+</tr>
+<tr>
+<td>想一劳永逸</td>
+<td><code>.wslconfig</code> 用 <code>networkingMode=mirrored</code> + <code>autoProxy=true</code></td>
+</tr>
+<tr>
+<td>不方便改模式</td>
+<td>开 <code>allow-lan</code> + WSL 里指网关 IP</td>
+</tr>
+</tbody>
+</table>
+<p>关键认知就一句话：<strong>WSL 的 <code>127.0.0.1</code> 不是 Windows 的 <code>127.0.0.1</code>。</strong>
+记住这个，这类问题能省下不少排查时间。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">先理解为什么会「完全没输出」</a></li>
+<li><a href="#_2">一条命令定性</a></li>
+<li><a href="#amirrored-autoproxy">解法 A（推荐）：mirrored + autoProxy</a></li>
+<li><a href="#bnat">解法 B（NAT 模式兜底）</a></li>
+<li><a href="#_3">几个容易踩的细节</a></li>
+<li><a href="#_4">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

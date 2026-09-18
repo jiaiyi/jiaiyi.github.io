@@ -6,17 +6,34 @@
 <title>甲乙的技术笔记</title>
 <meta name="description" content="Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。">
 <meta name="author" content="甲乙的技术笔记">
-<link rel="stylesheet" href="/static/style.css">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
 <link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
 <link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 </head>
 <body class="page-index">
 
 <nav class="topnav">
   <a class="brand" href="/index.html">甲乙的技术笔记</a>
   <span class="spacer"></span>
-  <a href="https://github.com/jiaiyi/agent-skills">Skills</a>
-  <a href="https://github.com/jiaiyi">GitHub</a>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
 </nav>
 
 <main>
@@ -34,6 +51,36 @@
   </p>
 </header>
 <section class="post-list">
+<article class="card">
+  <h2><a href="posts/wsl-proxy.html">WSL 里 curl 一片空白，Windows 却好得很</a></h2>
+  <div class="card-meta"><time>2026-09-18</time><span class="tags"><span class="tag">WSL</span><span class="tag">代理</span><span class="tag">Windows</span></span></div>
+  <div class="card-summary"><p>如果你在 Windows 上开了代理，浏览器一切正常，但切到 WSL 里执行 <code>curl</code> 得到的是<strong>一片空白</strong> ——
+不是超时、不是报错，是真的一行输出都没有，连响应头都不打印。</p>
+<p><code>pip</code> / <code>uv</code> 的表现则是卡在第一个包上不动。</p>
+<p>这个现象很有辨识度，值得先记住它。</p></div>
+</article>
+
+<article class="card">
+  <h2><a href="posts/windows-locked-folder.html">Windows 说「文件夹正在使用」，却不告诉你是谁</a></h2>
+  <div class="card-meta"><time>2026-09-18</time><span class="tags"><span class="tag">Windows</span><span class="tag">排查</span><span class="tag">工具链</span></span></div>
+  <div class="card-summary"><p>想重命名或删除一个文件夹，Windows 弹出一句：</p>
+<div class="codehilite"><pre><span></span><code>操作无法完成，因为其中的文件夹或文件已在另一程序中打开
+</code></pre></div>
+
+<p>它<strong>不告诉你是哪个程序</strong>。于是你开始瞎猜：杀毒软件？云盘？刚才那个终端？</p>
+<p>关掉终端重试 —— 还是不行。</p></div>
+</article>
+
+<article class="card">
+  <h2><a href="posts/docx-ooxml-pitfalls.html">docx 转 Markdown：标题层级不在样式名里，代码块也不在</a></h2>
+  <div class="card-meta"><time>2026-09-18</time><span class="tags"><span class="tag">Python</span><span class="tag">OOXML</span><span class="tag">文档处理</span></span></div>
+  <div class="card-summary"><p><code>.docx</code> 本质是个 zip，里面是 OOXML。用 Python 解析它不难，难的是<strong>你不知道文档里
+信息到底是怎么存的</strong> —— 按直觉写的代码往往「不报错，但结果全错」。</p>
+<p>而且这些错误的症状通常<strong>出现在下游</strong>（切分、检索、显示），离解析这一步很远，
+排查起来很绕。</p>
+<p>下面这些都是踩过才知道的。</p></div>
+</article>
+
 <article class="card">
   <h2><a href="posts/pytorch-cpu-wheel.html">装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版</a></h2>
   <div class="card-meta"><time>2026-09-17</time><span class="tags"><span class="tag">PyTorch</span><span class="tag">Windows</span><span class="tag">环境配置</span></span></div>
@@ -56,8 +103,40 @@ insert 的时候才报错。</p>
 </main>
 
 <footer>
-  <p>© 2026 甲乙的技术笔记</p>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
 </footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
 
 </body>
 </html>

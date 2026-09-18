@@ -144,15 +144,19 @@ class Post:
         self.date_part, self.slug_part = (m.group(1), m.group(2)) if m else (self.date, path.stem)
         self.slug = slugify(self.slug_part)
         self.url = f"posts/{self.slug}.html"
+        # 中文阅读速度约 400 字/分钟（保守估计，含代码）
+        _plain = re.sub(r"\s+", "", body)
+        self.reading_time = max(1, round(len(_plain) / 400))
 
-    def render_body(self) -> tuple[str, str]:
-        """返回 (整篇 HTML, 列表页用的摘要 HTML)。"""
+    def render_body(self) -> tuple[str, str, str]:
+        """返回 (整篇 HTML, 列表页用的摘要 HTML, 目录 HTML)。"""
         MD.reset()
         full = MD.convert(self.body_md)
+        toc = getattr(MD, "toc", "") or ""
         head = self.body_md.split("<!--more-->")[0]
         MD.reset()
         excerpt = MD.convert(head) if head != self.body_md else ""
-        return full, excerpt
+        return full, excerpt, toc
 
 
 # ---------------------------------------------------------------- 页面生成
@@ -170,7 +174,7 @@ def build(site: dict) -> list[Post]:
 
     cards = []
     for p in posts:
-        _, excerpt = p.render_body()
+        _, excerpt, _ = p.render_body()
         if not excerpt:
             excerpt = f"<p>{html.escape(p.summary)}</p>" if p.summary else ""
         tag_html = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in p.tags)
@@ -214,8 +218,13 @@ def build(site: dict) -> list[Post]:
 
     # ---- 文章页
     for p in posts:
-        body, _ = p.render_body()
+        body, _, toc = p.render_body()
         tag_html = "".join(f'<span class="tag">{html.escape(t)}</span>' for t in p.tags)
+        toc_block = (
+            f'<aside class="toc-wrap"><div class="toc-title">目录</div>{toc}</aside>'
+            if toc
+            else ""
+        )
         page = _page(
             base,
             lang=site["lang"],
@@ -226,9 +235,16 @@ def build(site: dict) -> list[Post]:
 <article class="post">
   <a class="back" href="../index.html">← 返回列表</a>
   <h1>{html.escape(p.title)}</h1>
-  <div class="meta"><time>{fmt_date(p.date_part)}</time>{tag_html}</div>
+  <div class="meta">
+    <time>{fmt_date(p.date_part)}</time>
+    <span class="sep">·</span>
+    <span class="reading">{p.reading_time} 分钟读完</span>
+    {tag_html}
+  </div>
   <div class="content">{body}</div>
-</article>""",
+</article>
+{toc_block}
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>""",
         )
         (OUT_DIR / p.url).write_text(page, encoding="utf-8")
 

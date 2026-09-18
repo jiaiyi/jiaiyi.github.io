@@ -5,6 +5,24 @@
   <link>https://jiaiyi.github.io</link>
   <description>Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。</description>
   <item>
+    <title>WSL 里 curl 一片空白，Windows 却好得很</title>
+    <link>https://jiaiyi.github.io/posts/wsl-proxy.html</link>
+    <guid>https://jiaiyi.github.io/posts/wsl-proxy.html</guid>
+    <description>Windows 里 curl 畅通无阻，WSL 里 curl 连一行响应头都不打印，pip 卡在第一个包上不动。根因是代理只绑在回环地址上，而 WSL 住在另一个网络命名空间里。</description>
+  </item>
+  <item>
+    <title>Windows 说「文件夹正在使用」，却不告诉你是谁</title>
+    <link>https://jiaiyi.github.io/posts/windows-locked-folder.html</link>
+    <guid>https://jiaiyi.github.io/posts/windows-locked-folder.html</guid>
+    <description>想重命名或删除一个文件夹，Explorer 只回一句「操作无法完成，因为其中的文件夹或文件已在另一程序中打开」—— 但不说哪个程序。而真正的占用者，往往是你正开着的那台编辑器。</description>
+  </item>
+  <item>
+    <title>docx 转 Markdown：标题层级不在样式名里，代码块也不在</title>
+    <link>https://jiaiyi.github.io/posts/docx-ooxml-pitfalls.html</link>
+    <guid>https://jiaiyi.github.io/posts/docx-ooxml-pitfalls.html</guid>
+    <description>用 Python 解析 .docx 时，最容易踩的不是解析本身，而是文档里根本没按你想的方式存信息 —— 标题层级藏在 outlineLvl 里，代码块只靠字体区分，而错误会一路传到下游才爆出来。</description>
+  </item>
+  <item>
     <title>装完 PyTorch 发现 GPU 用不上？先看看你装的是不是 CPU 版</title>
     <link>https://jiaiyi.github.io/posts/pytorch-cpu-wheel.html</link>
     <guid>https://jiaiyi.github.io/posts/pytorch-cpu-wheel.html</guid>

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docx 转 Markdown：标题层级不在样式名里，代码块也不在 · 甲乙的技术笔记</title>
+<meta name="description" content="用 Python 解析 .docx 时，最容易踩的不是解析本身，而是文档里根本没按你想的方式存信息 —— 标题层级藏在 outlineLvl 里，代码块只靠字体区分，而错误会一路传到下游才爆出来。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>docx 转 Markdown：标题层级不在样式名里，代码块也不在</h1>
+  <div class="meta">
+    <time>2026-09-18</time>
+    <span class="sep">·</span>
+    <span class="reading">8 分钟读完</span>
+    <span class="tag">Python</span><span class="tag">OOXML</span><span class="tag">文档处理</span>
+  </div>
+  <div class="content"><p><code>.docx</code> 本质是个 zip，里面是 OOXML。用 Python 解析它不难，难的是<strong>你不知道文档里
+信息到底是怎么存的</strong> —— 按直觉写的代码往往「不报错，但结果全错」。</p>
+<p>而且这些错误的症状通常<strong>出现在下游</strong>（切分、检索、显示），离解析这一步很远，
+排查起来很绕。</p>
+<p>下面这些都是踩过才知道的。</p>
+<!--more-->
+
+<h2 id="_1">一、标题层级不在样式名里</h2>
+<p>第一反应一般是按样式名匹配：</p>
+<div class="codehilite"><pre><span></span><code><span class="k">if</span> <span class="s2">"标题"</span> <span class="ow">in</span> <span class="n">style_name</span><span class="p">:</span>
+    <span class="n">level</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">style_name</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+</code></pre></div>
+
+<p>这在用默认样式的文档上能用。但遇到<strong>自定义样式</strong>的文档，会一个标题都找不到：</p>
+<ul>
+<li>样式名是中文自定义的：<code>一级标题</code>、<code>半括号标题（五级）</code></li>
+<li>样式 ID 是乱码：<code>afc</code>、<code>a1</code>、<code>HTML1</code></li>
+</ul>
+<p>真正可靠的是 <code>styles.xml</code> 里样式定义上的 <strong><code>w:outlineLvl</code></strong>（0 起算，<code>0</code> = 一级）。</p>
+<div class="codehilite"><pre><span></span><code><span class="nt">&lt;w:style</span><span class="w"> </span><span class="na">w:styleId=</span><span class="s">"afc"</span><span class="nt">&gt;</span><span class="w">                     </span><span class="cm">&lt;!-- styleId 是【属性】→ 用 .get() --&gt;</span>
+<span class="w">  </span><span class="nt">&lt;w:name</span><span class="w"> </span><span class="na">w:val=</span><span class="s">"一级标题"</span><span class="nt">/&gt;</span><span class="w">                   </span><span class="cm">&lt;!-- 名字跟层级无关，别用它判断 --&gt;</span>
+<span class="w">  </span><span class="nt">&lt;w:pPr&gt;&lt;w:outlineLvl</span><span class="w"> </span><span class="na">w:val=</span><span class="s">"0"</span><span class="nt">/&gt;&lt;/w:pPr&gt;</span><span class="w">    </span><span class="cm">&lt;!-- 子元素 → 用 .find() --&gt;</span>
+<span class="nt">&lt;/w:style&gt;</span>
+</code></pre></div>
+
+<p>两个必须处理的细节：</p>
+<ol>
+<li><strong>沿 <code>basedOn</code> 链回溯。</strong> 很多子样式自己不写 <code>outlineLvl</code>，靠继承父样式。
+   回溯时要带<strong>深度上限</strong>，否则样式互相引用会成环、直接死循环。</li>
+<li><strong>段落级覆盖优先。</strong> 段落自己的 <code>w:pPr</code> 里也可能直接写 <code>w:outlineLvl</code>，
+   优先级高于样式继承。</li>
+</ol>
+<hr>
+<h2 id="_2">二、代码块按样式名判定会全军覆没</h2>
+<p>我实测过一份课程讲义：<strong>所有代码段落的 <code>pStyle</code> 都是空的</strong>，唯一的特征是字体 <code>Consolas</code>。</p>
+<p>只按样式名判断 → 代码块数 = 0 → 接下来就是第三节那场灾难。</p>
+<p><strong>判定要用两路「或」</strong>：</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">is_code_paragraph</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">style_name</span><span class="p">,</span> <span class="n">is_heading</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="c1"># 第一路：样式名（对规范文档有效）</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="n">style_name</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"preformatted"</span><span class="p">,</span> <span class="s2">"code"</span><span class="p">,</span> <span class="s2">"代码"</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="c1"># 标题不参与字体判定，防止把标题误判成代码</span>
+    <span class="k">if</span> <span class="n">is_heading</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="c1"># 第二路：字体</span>
+    <span class="k">for</span> <span class="n">rf</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">R_FONTS</span><span class="p">):</span>                      <span class="c1"># rFonts 是子元素</span>
+        <span class="k">for</span> <span class="n">attr</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"ascii"</span><span class="p">,</span> <span class="s2">"hAnsi"</span><span class="p">,</span> <span class="s2">"cs"</span><span class="p">,</span> <span class="s2">"eastAsia"</span><span class="p">):</span>   <span class="c1"># 四个都要查！</span>
+            <span class="n">font</span> <span class="o">=</span> <span class="p">(</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">W</span> <span class="o">+</span> <span class="n">attr</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">font</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">m</span> <span class="ow">in</span> <span class="n">font</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">MONOSPACE</span><span class="p">):</span>  <span class="c1"># consolas / courier / monaco ...</span>
+                <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span>
+</code></pre></div>
+
+<p>两个容易漏的点：</p>
+<ul>
+<li><strong><code>rFonts</code> 有四个属性</strong>：<code>ascii</code>（西文）、<code>hAnsi</code>（中文）、<code>cs</code>、<code>eastAsia</code>。
+  <strong>Word 通常只写其中一个</strong> —— 只查一个必然漏判。这四个都得看。</li>
+<li><strong>连续代码段落要合并成一个围栏。</strong> 否则一行一个 <code>```</code>，Markdown 直接废掉。</li>
+</ul>
+<hr>
+<h2 id="python-markdown">三、连锁灾难：Python 注释变成了 Markdown 标题</h2>
+<p>这是最隐蔽的一环。</p>
+<p>围栏没包住代码时，代码里的 Python 注释（<code># 创建引擎</code>）会原样落进 Markdown。
+而它在文本上和 Markdown 标题<strong>完全无法区分</strong>。</p>
+<p>下游如果按 <code>^#{1,6}\s+.+</code> 切分章节，后果是：</p>
+<ul>
+<li>每条注释变成一个「章节标题」</li>
+<li>标题栈被污染 → <code>chapter</code> / <code>parent</code> 字段里变成代码片段</li>
+<li>章节层级被切碎</li>
+<li>最终答案的「参考来源」里，显示的是代码当章节名</li>
+</ul>
+<p>修复前后的实测对比（同一份代码密集的讲义）：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>修复前</th>
+<th>修复后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>围栏代码块</td>
+<td>0</td>
+<td>50</td>
+</tr>
+<tr>
+<td>初切 sections</td>
+<td>239</td>
+<td>116</td>
+</tr>
+<tr>
+<td><code>chapter</code> 被代码污染</td>
+<td>大量</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p><strong>怎么排查</strong>：数一数 <code>md</code> 里以 <code>#</code> 开头的行数，再数「不在围栏内的」有多少 ——
+两者的差额就是被围栏保护住的注释数。差额为 0 就说明围栏根本没生效。</p>
+<p>⚠️ 判断「行是否在围栏内」必须<strong>逐行遍历状态机</strong>，别用 <code>md.count("```")</code> ——
+代码内容里本身也可能含 <code>```</code>，计数会错。</p>
+<hr>
+<h2 id="_3">四、图片有两种写法，都要认</h2>
+<table>
+<thead>
+<tr>
+<th>版本</th>
+<th>路径</th>
+<th>图片 id 位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>新版</td>
+<td><code>w:drawing</code> → <code>a:blip</code></td>
+<td><code>r:embed</code></td>
+</tr>
+<tr>
+<td>老版</td>
+<td><code>w:pict</code> → <code>v:imagedata</code></td>
+<td><code>r:id</code></td>
+</tr>
+</tbody>
+</table>
+<p>拿到 <code>rId</code> 后，去 <code>word/_rels/document.xml.rels</code> 查 <code>Target</code>，
+再以 <code>word/</code> 为基准解析出真实路径。</p>
+<p>两个细节：</p>
+<ul>
+<li><strong>跳过 <code>TargetMode="External"</code> 的关系</strong> —— 那是超链接，不是图片。</li>
+<li>下游处理不了的格式（比如 <code>emf</code>）<strong>照样导出文件，但别写进 Markdown</strong>，
+  否则会留一堆打不开的坏链接。</li>
+</ul>
+<hr>
+<h2 id="_4">五、其它几个必踩的坑</h2>
+<ul>
+<li><strong><code>~$xxx.docx</code> 是 Office 锁文件。</strong> 用户打开文档时生成，它不是 zip，
+  解析必然抛 <code>BadZipFile: File is not a zip file</code>。
+  批量导入脚本必须跳过 <code>~$</code> 前缀以及 <code>.tmp/.bak/.lck</code>。
+  （真实场景：数据目录里恰好有一个，整个批量任务直接崩。）</li>
+<li><strong>ElementTree 的 tag 带命名空间全名。</strong> 它是 <code>{http://...}t</code>，
+  不能拿 <code>"w:t"</code> 这种带前缀的短名去比 —— <strong>永远不会相等</strong>，然后静默取不到文本。
+  同样地，<code>w:styleId</code> 是<strong>属性</strong>（用 <code>.get()</code>），<code>w:outlineLvl</code> 是<strong>子元素</strong>（用 <code>.find()</code>）——
+  这两个混用是高频笔误。</li>
+<li><strong>取段落文本要递归。</strong> 用 <code>iter()</code> 才能覆盖 <code>w:hyperlink</code> 里的 <code>w:t</code>；
+  <code>w:tab</code> / <code>w:br</code> 也要单独映射，否则换行全丢。</li>
+<li><strong>表格转 Markdown 前做三件事</strong>：单元格里的 <code>|</code> 转义、列数补齐、
+  分隔行必须是 <code>["---"] * n</code> —— 写成 <code>"---" * n</code> 会得到 <code>------</code> 这种在有的渲染器里
+  会被当成文本的长横线。</li>
+<li><strong>⚠️ 公式（OMML）会丢。</strong> 数学文档的公式是 <code>m:oMath</code> 对象，不是 <code>w:t</code> 文本。
+  不专门处理，剩下的就只有「记作、或。」这种残缺句子。数学类语料要单独评估。</li>
+<li><strong><code>#</code> 后面必须有空格</strong>，否则下游的 <code>^#{1,6}\s+.+</code> 匹配不到。</li>
+</ul>
+<hr>
+<h2 id="_5">六、验收口径：别只看「没报错」</h2>
+<p>解析完必须打这几项指标，才能判断结果是否可信：</p>
+<div class="codehilite"><pre><span></span><code>md 字符数
+围栏代码块数
+以 # 开头的行数（要区分围栏内外）
+表格行数
+图片导出与引用数
+</code></pre></div>
+
+<p><strong>代码块数为 0，而文档明明是代码讲义 → 一定是第二节那个问题。</strong></p>
+<h3 id="vs">再算一笔账：文件大小 vs 正文长度</h3>
+<p>讲义类文档经常出现 <strong>文件 3 MB，正文却只有 18 KB</strong> 的情况 —— 差额几乎全是截图
+（我那次是 26 张）。</p>
+<p>这种情况下，纯文字解析会<strong>静默丢掉大量信息</strong>（操作步骤、界面、配置项全在图里），
+而所有指标看起来都正常（标题有、代码块有、表格有），最容易被当成「解析成功」。</p>
+<p>所以遇到比值悬殊，一定要<strong>同步导出图片并看几张关键的</strong>。导出时顺手记录每张图的
+<strong>上文段落</strong> —— 比按序号猜它在哪一节省事得多。</p>
+<hr>
+<h2 id="_6">小结</h2>
+<table>
+<thead>
+<tr>
+<th>你想当然的做法</th>
+<th>实际应该</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>按样式名判标题层级</td>
+<td>读 <code>w:outlineLvl</code>，沿 <code>basedOn</code> 链回溯</td>
+</tr>
+<tr>
+<td>按样式名判代码块</td>
+<td>加一路字体判定，查全 <code>rFonts</code> 四个属性</td>
+</tr>
+<tr>
+<td>用 <code>"w:t"</code> 比 tag</td>
+<td>用 <code>{namespace}t</code> 全名</td>
+</tr>
+<tr>
+<td><code>md.count("```")</code> 数围栏</td>
+<td>逐行状态机遍历</td>
+</tr>
+<tr>
+<td>解析不报错就算成功</td>
+<td>跑真实文件，一路验到下游切分结果</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心认知：文档里的信息不一定按你期望的方式存储，而错误往往在下游才暴露。</strong>
+解析器写得对不对，不看它跑没跑通，看下游拿到的东西对不对。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">一、标题层级不在样式名里</a></li>
+<li><a href="#_2">二、代码块按样式名判定会全军覆没</a></li>
+<li><a href="#python-markdown">三、连锁灾难：Python 注释变成了 Markdown 标题</a></li>
+<li><a href="#_3">四、图片有两种写法，都要认</a></li>
+<li><a href="#_4">五、其它几个必踩的坑</a></li>
+<li><a href="#_5">六、验收口径：别只看「没报错」</a><ul>
+<li><a href="#vs">再算一笔账：文件大小 vs 正文长度</a></li>
+</ul>
+</li>
+<li><a href="#_6">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

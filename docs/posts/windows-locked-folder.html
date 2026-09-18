@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Windows 说「文件夹正在使用」，却不告诉你是谁 · 甲乙的技术笔记</title>
+<meta name="description" content="想重命名或删除一个文件夹，Explorer 只回一句「操作无法完成，因为其中的文件夹或文件已在另一程序中打开」—— 但不说哪个程序。而真正的占用者，往往是你正开着的那台编辑器。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>Windows 说「文件夹正在使用」，却不告诉你是谁</h1>
+  <div class="meta">
+    <time>2026-09-18</time>
+    <span class="sep">·</span>
+    <span class="reading">7 分钟读完</span>
+    <span class="tag">Windows</span><span class="tag">排查</span><span class="tag">工具链</span>
+  </div>
+  <div class="content"><p>想重命名或删除一个文件夹，Windows 弹出一句：</p>
+<div class="codehilite"><pre><span></span><code>操作无法完成，因为其中的文件夹或文件已在另一程序中打开
+</code></pre></div>
+
+<p>它<strong>不告诉你是哪个程序</strong>。于是你开始瞎猜：杀毒软件？云盘？刚才那个终端？</p>
+<p>关掉终端重试 —— 还是不行。</p>
+<!--more-->
+
+<h2 id="_1">先理解有两类占用源</h2>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>说明</th>
+<th>常见程度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>某进程的「当前工作目录」(cwd) 落在该文件夹里</strong></td>
+<td>进程没打开任何文件，只是「站在」这个目录里</td>
+<td>最常见，也最容易被忽略</td>
+</tr>
+<tr>
+<td>某进程打开了该文件夹里的某个文件句柄</td>
+<td>真正持有了文件</td>
+<td>相对少见</td>
+</tr>
+</tbody>
+</table>
+<p><strong>第一类是关键。</strong> Windows 不允许删除/重命名任何进程的 cwd 所在的目录 ——
+哪怕那个进程什么文件都没碰。</p>
+<p>想想谁会把 cwd 停在你的项目根目录：一个开着的终端（<code>cd</code> 进去了）、
+一个把该目录当工作区打开的 IDE。</p>
+<hr>
+<h2 id="_2">⚠️ 最重要的那个陷阱：你自己的编辑器在拦你</h2>
+<p>只要你在 <strong>VS Code / PyCharm / Cursor / WorkBuddy</strong> 里把某个文件夹作为<strong>工作区打开着</strong>，
+这个 IDE 的<strong>多个进程</strong>（主进程、语言服务、集成终端、沙箱、若干 node/python 子进程）
+的 cwd 就都停在工作区根目录。</p>
+<p><strong>所以拦着你改名的那个人，就是你自己正在用的编辑器。</strong></p>
+<p>这也解释了为什么「关掉终端再重试」永远无效 —— 终端只是众多占用者里最小的一个。</p>
+<p>正确的处理顺序是：<strong>先关终端，再退出 IDE（或切换工作区），最后才重试</strong>。
+只做第一步是最常见的无效操作。</p>
+<hr>
+<h2 id="_3">怎么定位到底是谁</h2>
+<p>网上常见的建议是 <code>openfiles /query</code>，但在默认配置的 Windows 上<strong>基本没用</strong>，
+它会直接告诉你条件不满足：</p>
+<div class="codehilite"><pre><span></span><code>信息: 需要启动系统全局标志"维护对象列表"才能查看本地打开的文件
+</code></pre></div>
+
+<p>（要开那个标志得改注册表并重启。不值得。）</p>
+<p>更直接的办法是<strong>逐进程扫 cwd</strong>：</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># find_dir_lock.py —— python -m pip install psutil</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span><span class="o">,</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">psutil</span>
+
+<span class="n">target</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+<span class="n">denied</span> <span class="o">=</span> <span class="mi">0</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"扫描目标: </span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"── cwd 落在目标目录内的进程 ──"</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">psutil</span><span class="o">.</span><span class="n">process_iter</span><span class="p">([</span><span class="s2">"pid"</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">]):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cwd</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">psutil</span><span class="o">.</span><span class="n">AccessDenied</span><span class="p">,</span> <span class="n">psutil</span><span class="o">.</span><span class="n">NoSuchProcess</span><span class="p">):</span>
+        <span class="n">denied</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">continue</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">continue</span>
+    <span class="k">if</span> <span class="n">cwd</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">cwd</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">target</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  PID </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s1">'pid'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;7</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2"> cwd=</span><span class="si">{</span><span class="n">cwd</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── 打开了目标目录内文件的进程 ──"</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">psutil</span><span class="o">.</span><span class="n">process_iter</span><span class="p">([</span><span class="s2">"pid"</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">]):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">open_files</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">target</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  PID </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s1">'pid'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;7</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">f</span><span class="o">.</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="k">break</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">psutil</span><span class="o">.</span><span class="n">AccessDenied</span><span class="p">,</span> <span class="n">psutil</span><span class="o">.</span><span class="n">NoSuchProcess</span><span class="p">):</span>
+        <span class="n">denied</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">continue</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">跳过的受限进程数: </span><span class="si">{</span><span class="n">denied</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">denied</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"（命中为空但改名仍失败 → 占用者可能在别的权限下，用管理员身份重跑）"</span><span class="p">)</span>
+</code></pre></div>
+
+<p>用法：</p>
+<div class="codehilite"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>psutil
+python<span class="w"> </span>find_dir_lock.py<span class="w"> </span><span class="s2">"D:\some\path"</span>
+</code></pre></div>
+
+<p><code>AccessDenied</code> 的进程会被跳过 —— 如果跳过的数量不少，而改名仍然失败，
+说明占用者可能在<strong>另一个权限级别</strong>下，需要用管理员身份再跑一次。</p>
+<hr>
+<h2 id="_4">按占用者类型处理</h2>
+<table>
+<thead>
+<tr>
+<th>占用者</th>
+<th>处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cmd.exe</code> / <code>pwsh.exe</code> / <code>bash.exe</code>，cwd 在目录里</td>
+<td>关掉那个终端窗口，或先 <code>cd ..</code> 退出去</td>
+</tr>
+<tr>
+<td>IDE 主进程 + 一堆 node/python/sandbox 子进程</td>
+<td><strong>退出 IDE，或切到别的工作区</strong>，然后改名</td>
+</tr>
+<tr>
+<td>云盘同步客户端（OneDrive、WPS 云盘、坚果云、Dropbox）</td>
+<td>暂停同步，或退出客户端</td>
+</tr>
+<tr>
+<td>杀毒 / 索引（Windows Search、Defender）</td>
+<td>通常几秒后释放，直接点「重试」</td>
+</tr>
+<tr>
+<td><code>explorer.exe</code> 且你在该目录开过预览/缩略图</td>
+<td>关掉那个资源管理器窗口，或重启 explorer</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="_5">不想关编辑器？用目录联接绕开</h2>
+<p>如果占用者就是你的 IDE，而你不想中断手头的工作 —— <strong>别改名，改用一个无空格的访问路径</strong>：</p>
+<div class="codehilite"><pre><span></span><code>cmd&gt; mklink /J "D:\new_path_no_space" "D:\old path with space"
+</code></pre></div>
+
+<p>几个要点：</p>
+<ul>
+<li><code>/J</code> 创建的是 <strong>junction（目录联接）</strong>，<strong>不需要管理员权限</strong>；
+  符号链接（<code>/D</code>）才需要提权。这个区别很实用。</li>
+<li>之后所有工具都用 <code>D:\new_path_no_space\...</code> 访问，<strong>物理目录原地不动</strong>。</li>
+<li>删除联接用 <code>rmdir "D:\new_path_no_space"</code> —— <strong>只删链接，不会删目标内容</strong>。
+  别顺手用 <code>del</code>。</li>
+<li>适用场景：你真正想解决的只是「路径含空格导致某些脚本翻车」，而不是非要改物理目录名。</li>
+</ul>
+<hr>
+<h2 id="_6">真改了名，别忘了这些副作用</h2>
+<p>重命名<strong>工作区根目录</strong>之前先想清楚：</p>
+<ul>
+<li>IDE 里保存的<strong>工作区路径会失效</strong>，得用新路径重新打开。</li>
+<li>藏在目录里的项目级配置（<code>.vscode/</code>、<code>.idea/</code>、<code>.workbuddy/</code>、<code>.git/</code>）会<strong>跟着目录一起移动</strong> ——
+  数据不会丢，但引用旧绝对路径的配置项会断（比如 <code>.idea/misc.xml</code> 里的解释器路径）。</li>
+<li><strong>Python 虚拟环境</strong>：<code>pyvenv.cfg</code> 和 <code>Scripts/*.exe</code> 里可能写死了原路径。
+  改名后如果 <code>python.exe</code> 报错，<strong>最干净的做法是删掉重装 venv</strong>，不要手动去改那些文件。</li>
+<li>正在该目录下跑的进程（训练、服务、watch 任务）会继续持有旧路径的句柄 —— 它们不会自己迁移。</li>
+</ul>
+<hr>
+<h2 id="_7">决策树</h2>
+<div class="codehilite"><pre><span></span><code>改名/删除报「文件夹正在使用」
+├─ 有终端 cd 在里面        → 关掉那个终端窗口
+├─ 有 IDE 开着该目录       → 退出 IDE / 切换工作区；不想关就用 mklink /J 绕开
+├─ 有云盘同步客户端在跑    → 暂停同步
+├─ 什么都没查到            → 用管理员身份重跑脚本；再不行重启 explorer.exe
+└─ 仍然失败                → 重启机器，趁没启动任何程序时立刻改
+</code></pre></div>
+
+<p>核心认知一句话：<strong>占用者不一定是「打开了文件」的进程，也可能只是「站在这个目录里」的进程</strong> ——
+而最常站在你的项目根目录里的，就是你自己开着的编辑器。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">先理解有两类占用源</a></li>
+<li><a href="#_2">⚠️ 最重要的那个陷阱：你自己的编辑器在拦你</a></li>
+<li><a href="#_3">怎么定位到底是谁</a></li>
+<li><a href="#_4">按占用者类型处理</a></li>
+<li><a href="#_5">不想关编辑器？用目录联接绕开</a></li>
+<li><a href="#_6">真改了名，别忘了这些副作用</a></li>
+<li><a href="#_7">决策树</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>
