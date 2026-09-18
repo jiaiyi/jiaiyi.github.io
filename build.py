@@ -243,6 +243,9 @@ def build(site: dict) -> list[Post]:
     (OUT_DIR / "static" / "pygments.css").write_text(
         HtmlFormatter().get_style_defs(".codehilite"), encoding="utf-8"
     )
+    # GitHub Pages 默认会跑 Jekyll 处理，那会把仓库根目录的 README 当首页、
+    # 并忽略下划线开头的文件。站点是预构建好的纯静态文件，直接跳过它。
+    (OUT_DIR / ".nojekyll").write_text("", encoding="utf-8")
     return posts
 
 
