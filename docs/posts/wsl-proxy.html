@@ -162,6 +162,9 @@ curl<span class="w"> </span>-sI<span class="w"> </span>--max-time<span class="w"
 <li><strong>如果 <code>allow-lan</code> 放开了还是不通</strong>，再看一层：新版 WSL 的网卡名会带
   <code>(Hyper-V firewall)</code>，防火墙策略可能仍在拦。这时候在 Windows 侧查
   <code>ipconfig</code> 确认网段，再用 <code>netstat</code> 确认绑定、<code>tasklist</code> 确认进程是否还活着。</li>
+<li><strong>想确认 WSL 拿到的是哪个 IP</strong>：<code>ip route show default</code> 的第三列就是网关，
+  也就是 Windows 那块 <code>vEthernet (WSL)</code> 网卡的地址。它<strong>每次重启 WSL 都可能变</strong> ——
+  所以硬编码 IP 写进 <code>~/.bashrc</code> 迟早会失效，用动态取值（或者干脆走解法 A）。</li>
 </ul>
 <hr>
 <h2 id="_4">小结</h2>
