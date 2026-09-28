@@ -618,7 +618,58 @@ footer .sep { margin: 0 .5rem; color: var(--border-2); }
   }
 }
 
-/* ---------------- 12. 暗色代码高亮 ------------------------------------
+/* ---------------- 12. 关于区块 ---------------- */
+.about {
+  margin-top: 3.2rem;
+  padding-top: 2.2rem;
+  border-top: 1px solid var(--border);
+}
+
+.about h2 {
+  margin: 0 0 .85rem;
+  font-size: 1.13rem;
+  font-weight: 700;
+  letter-spacing: -.015em;
+}
+
+.about-intro {
+  max-width: 36rem;
+  margin: 0 0 1.5rem;
+  font-size: .93rem;
+  line-height: 1.85;
+  color: var(--fg-2);
+}
+
+.about-facts {
+  margin: 0;
+  display: grid;
+  gap: .75rem;
+}
+
+.about-facts .fact { display: contents; }
+
+.about-facts dt {
+  font-size: .82rem;
+  font-weight: 600;
+  line-height: 1.7;
+  color: var(--fg-3);
+}
+
+.about-facts dd {
+  margin: 0;
+  font-size: .89rem;
+  line-height: 1.7;
+  color: var(--fg-2);
+}
+
+@media (min-width: 620px) {
+  .about-facts {
+    grid-template-columns: 6.5rem 1fr;
+    gap: .75rem 1.1rem;
+  }
+}
+
+/* ---------------- 13. 暗色代码高亮 ------------------------------------
    pygments 只生成浅色方案。暗色下必须另配一套 token 颜色，
    否则关键字是深绿、字符串是暗红，几乎看不清。
    -------------------------------------------------------------------- */

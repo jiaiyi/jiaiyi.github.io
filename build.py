@@ -52,6 +52,22 @@ SITE = {
     "repo": "https://github.com/jiaiyi/agent-skills",
     "base_url": "https://jiaiyi.github.io",
     "lang": "zh-CN",
+
+    # 「关于」区块 —— 想改内容只动这里，不用碰下面的代码
+    "about": {
+        "enabled": True,
+        "heading": "关于",
+        "intro": (
+            "做后端与检索系统。这里记录的都是真实踩过的坑 —— "
+            "每篇都写清楚现象、怎么定位、判断依据和验证数据，而不是抄一遍文档。"
+        ),
+        "facts": [
+            ("技术方向", "Python 后端 / RAG 检索 / 向量数据库"),
+            ("在做的事", "教育知识库 RAG 系统：文档导入 → 切分 → 向量化 → 混合检索 → 重排 → 答案生成"),
+            ("常用工具", "Milvus、MongoDB、MinIO、BGE-M3、Docker、uv"),
+            ("联系方式", "2938054263@qq.com"),   # ← 想换就改这里
+        ],
+    },
 }
 
 MD = markdown.Markdown(
@@ -189,6 +205,23 @@ def build(site: dict) -> list[Post]:
             )
         )
 
+    # ---- 「关于」区块
+    about = site.get("about") or {}
+    if about.get("enabled", True) and about.get("intro"):
+        facts_html = "".join(
+            f'<div class="fact"><dt>{html.escape(k)}</dt>'
+            f'<dd>{html.escape(v)}</dd></div>'
+            for k, v in about.get("facts", [])
+        )
+        about_html = f"""
+<section class="about">
+  <h2>{html.escape(about.get("heading", "关于"))}</h2>
+  <p class="about-intro">{html.escape(about.get("intro", ""))}</p>
+  <dl class="about-facts">{facts_html}</dl>
+</section>"""
+    else:
+        about_html = ""
+
     # ---- 列表页
     list_html = "\n".join(cards) or '<p class="empty">还没有文章。</p>'
     index_html = _page(
@@ -211,7 +244,8 @@ def build(site: dict) -> list[Post]:
 </header>
 <section class="post-list">
 {list_html}
-</section>""",
+</section>
+{about_html}""",
     )
     (OUT_DIR / "index.html").write_text(index_html, encoding="utf-8")
 
