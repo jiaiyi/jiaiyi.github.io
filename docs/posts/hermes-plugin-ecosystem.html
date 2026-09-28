@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hermes 的五套「插件」根本不是一回事 · 甲乙的技术笔记</title>
+<meta name="description" content="装上插件却不生效、改了配置没反应 —— 大多数时候是因为把五套互不相干的扩展机制混为一谈了。先分清是哪一类，再看对应的开关。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>Hermes 的五套「插件」根本不是一回事</h1>
+  <div class="meta">
+    <time>2026-09-28</time>
+    <span class="sep">·</span>
+    <span class="reading">10 分钟读完</span>
+    <span class="tag">Hermes</span><span class="tag">插件系统</span><span class="tag">工具链</span>
+  </div>
+  <div class="content"><p>在 Hermes 里折腾插件，最容易遇到的困惑是：</p>
+<p><strong>「我明明装上了，为什么没生效？」</strong></p>
+<p>原因通常是：Hermes 的「插件」<strong>不是一个东西，而是五套互不相干的扩展机制</strong>。混为一谈就会一直在错的开关上打转。</p>
+<!--more-->
+
+<h2 id="_1">先分清五类扩展面</h2>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>位置</th>
+<th>开关</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 常驻 hook / tool 插件</td>
+<td><code>hermes-agent/plugins/</code></td>
+<td><code>plugins.enabled</code> 白名单</td>
+</tr>
+<tr>
+<td>② Provider 型插件</td>
+<td><code>plugins/memory/</code>、<code>model-providers/</code>、<code>web/</code> 等</td>
+<td>各自目录独立发现，<strong>同类同时只激活一个</strong></td>
+</tr>
+<tr>
+<td>③ 平台网关</td>
+<td><code>plugins/platforms/</code></td>
+<td><code>config.yaml</code> 的 <code>platform_toolsets</code> + 各自凭据</td>
+</tr>
+<tr>
+<td>④ Dashboard 插件</td>
+<td>自带 <code>dashboard/manifest.json</code></td>
+<td><strong>自动挂载，不受白名单控制</strong></td>
+</tr>
+<tr>
+<td>⑤ MCP</td>
+<td><code>optional-mcps/</code></td>
+<td><code>config.yaml</code> 的 <code>mcp_servers</code></td>
+</tr>
+</tbody>
+</table>
+<p>几个容易搞混的点：</p>
+<p><strong>① 和 ④ 的开关完全相反。</strong> hook 插件要显式 <code>enable</code>；dashboard 插件只要你把目录放对，它自己就挂上了 —— 反过来，你在白名单里写它的名字也没用。</p>
+<p><strong>③ 是「平台网关」不是「插件」</strong>。telegram / discord / 飞书 / 钉钉 / 企业微信这些走的是平台通道，和 <code>plugins.enabled</code> 没关系。</p>
+<p><strong>⑤ 压根不是 Python 插件</strong>。MCP 是独立协议，配置项在 <code>mcp_servers</code> 下。你去 <code>plugins.enabled</code> 里找它当然找不到。</p>
+<hr>
+<h2 id="_2">目录布局</h2>
+<p>路径都相对于 <code>HERMES_HOME</code>：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>路径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>源码 / 仓库</td>
+<td><code>%HERMES_HOME%\hermes-agent</code></td>
+</tr>
+<tr>
+<td>内置插件</td>
+<td><code>%HERMES_HOME%\hermes-agent\plugins\</code></td>
+</tr>
+<tr>
+<td>用户插件</td>
+<td><code>%HERMES_HOME%\plugins\</code></td>
+</tr>
+<tr>
+<td>桌面端插件</td>
+<td><code>%HERMES_HOME%\desktop-plugins\</code></td>
+</tr>
+<tr>
+<td>启用白名单</td>
+<td><code>%HERMES_HOME%\config.yaml</code> → <code>plugins.enabled</code></td>
+</tr>
+<tr>
+<td>venv</td>
+<td><code>%HERMES_HOME%\hermes-agent\venv</code></td>
+</tr>
+<tr>
+<td>官方文档</td>
+<td><code>...\hermes-agent\website\docs\user-guide\features\</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>HERMES_HOME</code> 的解析顺序：<strong>先读环境变量，读不到才去注册表读用户环境变量</strong> —— 所以从资源管理器（而不是 shell）启动时，也能拿到正确的 home。</p>
+<hr>
+<h2 id="_3">两个已知的坑</h2>
+<h3 id="_4">坑一：远端插件索引已经失效</h3>
+<p>源码里 <code>hermes_cli/plugin_index.py</code> 指向的是：</p>
+<div class="codehilite"><pre><span></span><code>https://raw.githubusercontent.com/NousResearch/hermes-plugin-index/main/index.json
+</code></pre></div>
+
+<p><strong>实测该仓库 404</strong> → <code>hermes plugins install &lt;短名&gt;</code> 这条路走不通。</p>
+<p>只能直连仓库：</p>
+<div class="codehilite"><pre><span></span><code>hermes<span class="w"> </span>plugins<span class="w"> </span>install<span class="w"> </span>owner/repo<span class="w"> </span><span class="o">[</span>--ref<span class="w"> </span>&lt;sha&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>--enable<span class="p">|</span>--no-enable<span class="o">]</span>
+</code></pre></div>
+
+<p>本地那份种子索引 <code>hermes_cli/data/plugin_index.json</code> 也只有寥寥几条，基本指望不上。</p>
+<h3 id="windows">坑二：有些插件在 Windows 上根本跑不起来</h3>
+<p>某些插件的 <code>plugin.yaml</code> 里写着：</p>
+<div class="codehilite"><pre><span></span><code><span class="nt">platforms</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">macos</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+
+<p><strong>Windows 上装了也起不来。</strong></p>
+<p>所以判断「这个插件能不能用」，<strong>第一件事是看 <code>plugin.yaml</code> 的 <code>platforms</code> 字段</strong> —— 别等装完了发现不生效才回去查。</p>
+<hr>
+<h2 id="_5">另外三个反直觉的点</h2>
+<p><strong>① 内置插件全部 opt-in，永不自动启用。</strong></p>
+<p>升级 Hermes 也不会替你打开。<strong>装了 ≠ 开了。</strong></p>
+<p><strong>② 目录里没有 <code>plugin.yaml</code>，不等于它不是插件。</strong></p>
+<p><code>context_engine/</code>、<code>hermes-achievements/</code>、<code>kanban/</code> 走的是<strong>独立发现路径</strong>。
+另外 <code>memory/</code> 和 <code>context_engine/</code> 还被<strong>显式排除</strong>在 bundled 扫描之外 —— 所以按「遍历所有 plugin.yaml」去盘点，会漏掉它们。</p>
+<p><strong>③ 用户插件和内置插件同名时，用户版胜出（last-writer-wins）。</strong></p>
+<p>这可以拿来<strong>覆盖内置实现</strong>，是个有用的特性。</p>
+<hr>
+<h2 id="yaml">盘点脚本：注意 YAML 折叠块</h2>
+<p>遍历所有 manifest 提取 name / kind / description —— 这里有个细节：<code>description: &gt;</code> 这种<strong>折叠块</strong>，用朴素正则 <code>^key: (.+)$</code> 只能抓到 <code>&gt;</code> 本身。</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="o">,</span><span class="w"> </span><span class="nn">re</span><span class="o">,</span><span class="w"> </span><span class="nn">json</span>
+
+<span class="n">ROOT</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"HERMES_HOME"</span><span class="p">],</span> <span class="s2">"hermes-agent"</span><span class="p">,</span> <span class="s2">"plugins"</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_yaml_lite</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""极简 YAML 解析，重点处理 &gt; / | 这类折叠块"""</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">"replace"</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="n">out</span><span class="p">,</span> <span class="n">i</span> <span class="o">=</span> <span class="p">{},</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">):</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^([A-Za-z_][\w-]*):\s*(.*)$"</span><span class="p">,</span> <span class="n">lines</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+            <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"&gt;"</span><span class="p">,</span> <span class="s2">"&gt;-"</span><span class="p">,</span> <span class="s2">"|"</span><span class="p">,</span> <span class="s2">"|-"</span><span class="p">,</span> <span class="s2">"&gt;+"</span><span class="p">,</span> <span class="s2">"|+"</span><span class="p">):</span>
+                <span class="n">buf</span><span class="p">,</span> <span class="n">i</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">" "</span><span class="p">,</span> <span class="s2">"</span><span class="se">\t</span><span class="s2">"</span><span class="p">))</span>
+                                          <span class="ow">or</span> <span class="ow">not</span> <span class="n">lines</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()):</span>
+                    <span class="n">buf</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                    <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">out</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">buf</span> <span class="k">if</span> <span class="n">x</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">'"'</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">"'"</span><span class="p">)</span>
+        <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">out</span>
+
+<span class="k">for</span> <span class="n">dp</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">fs</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">ROOT</span><span class="p">):</span>
+    <span class="k">if</span> <span class="s2">"plugin.yaml"</span> <span class="ow">in</span> <span class="n">fs</span><span class="p">:</span>
+        <span class="n">info</span> <span class="o">=</span> <span class="n">parse_yaml_lite</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dp</span><span class="p">,</span> <span class="s2">"plugin.yaml"</span><span class="p">))</span>
+        <span class="n">info</span><span class="p">[</span><span class="s2">"path"</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">relpath</span><span class="p">(</span><span class="n">dp</span><span class="p">,</span> <span class="n">ROOT</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"</span><span class="se">\\</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"/"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">info</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+</code></pre></div>
+
+<hr>
+<h2 id="_6">常用命令</h2>
+<div class="codehilite"><pre><span></span><code>hermes<span class="w"> </span>plugins<span class="w">                 </span><span class="c1"># 交互式勾选 UI</span>
+hermes<span class="w"> </span>plugins<span class="w"> </span>list<span class="w">            </span><span class="c1"># 列出全部（标注 bundled / user 来源）</span>
+hermes<span class="w"> </span>plugins<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>&lt;name&gt;
+hermes<span class="w"> </span>plugins<span class="w"> </span>disable<span class="w"> </span>&lt;name&gt;
+hermes<span class="w"> </span>memory<span class="w"> </span>setup<span class="p">|</span>status<span class="p">|</span>off
+hermes<span class="w"> </span>tools<span class="w">                   </span><span class="c1"># 交互式</span>
+</code></pre></div>
+
+<p>配置式等价写法（<code>%HERMES_HOME%\config.yaml</code>）：</p>
+<div class="codehilite"><pre><span></span><code><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">disk-cleanup</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">security-guidance</span>
+<span class="nt">memory</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">holographic</span>
+</code></pre></div>
+
+<hr>
+<h2 id="_7">哪些值得开（带判断，不是罗列）</h2>
+<p><strong><code>disk-cleanup</code></strong> —— hook 驱动，零配置。关键在于它<strong>只在 <code>HERMES_HOME</code> 和 <code>/tmp/hermes-*</code> 内动手</strong>，白名单保住 <code>logs/ sessions/ memories/ cron/ cache/ skills/ plugins/</code>，而且删之前有 <code>dry-run</code>。安全性足够，可以直接开。</p>
+<p><strong><code>security-guidance</code></strong> —— 25 条规则（<code>pickle.load</code> / <code>eval</code> / <code>shell=True</code> / XXE / SRI / CI 注入…）。默认是 <strong>warn 不 block</strong>，误报不误事。<strong>写代码场景收益最高。</strong></p>
+<p><strong><code>observability/langfuse</code></strong> —— 要算 token / 成本 / 工具调用账的时候开。它是 fail-open 的，坏了也不影响主循环，所以可以放心装。</p>
+<p><strong>记忆后端</strong>：<code>holographic</code> 是本地 SQLite + FTS5，<strong>零依赖零费用</strong>。<code>mem0</code> / <code>supermemory</code> / <code>honcho</code> 都要 key 或者联网。</p>
+<p><strong>搜索后端</strong>：<code>web-ddgs</code> 免 key（<code>pip install ddgs</code>）最省事；国内环境更适合自建 <code>web-searxng</code>。</p>
+<hr>
+<h2 id="_8">小结</h2>
+<p>遇到「插件不生效」时，先问三个问题：</p>
+<ol>
+<li><strong>它属于五类里的哪一类？</strong>（决定去哪个开关找）</li>
+<li><strong><code>plugin.yaml</code> 里的 <code>platforms</code> 包含当前系统吗？</strong></li>
+<li><strong>它是不是 dashboard 型（不需要白名单）或者压根是 MCP（不在这里配）？</strong></li>
+</ol>
+<p>把这三问答清楚，大部分「装了没用」的问题就自己解开了。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">先分清五类扩展面</a></li>
+<li><a href="#_2">目录布局</a></li>
+<li><a href="#_3">两个已知的坑</a><ul>
+<li><a href="#_4">坑一：远端插件索引已经失效</a></li>
+<li><a href="#windows">坑二：有些插件在 Windows 上根本跑不起来</a></li>
+</ul>
+</li>
+<li><a href="#_5">另外三个反直觉的点</a></li>
+<li><a href="#yaml">盘点脚本：注意 YAML 折叠块</a></li>
+<li><a href="#_6">常用命令</a></li>
+<li><a href="#_7">哪些值得开（带判断，不是罗列）</a></li>
+<li><a href="#_8">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

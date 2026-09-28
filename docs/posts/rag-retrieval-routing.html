@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 检索路由：为什么「精确问课程名」反而答错 · 甲乙的技术笔记</title>
+<meta name="description" content="一个反直觉的实测结果：用户已经说出对象名字了，向量检索给出的却是另一门课，而且相似度分数高达 0.79。光看分数救不了 —— 这类问题必须靠路由解决。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>RAG 检索路由：为什么「精确问课程名」反而答错</h1>
+  <div class="meta">
+    <time>2026-09-28</time>
+    <span class="sep">·</span>
+    <span class="reading">9 分钟读完</span>
+    <span class="tag">RAG</span><span class="tag">检索</span><span class="tag">路由</span><span class="tag">LLM</span>
+  </div>
+  <div class="content"><p>一个反直觉的实测结果，先说结论：</p>
+<table>
+<thead>
+<tr>
+<th>问法</th>
+<th>top1 分数</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「有没有讲 Galois 理论的课」</td>
+<td>0.7529</td>
+<td>✅ 命中</td>
+</tr>
+<tr>
+<td>「有哪些 Python 相关课程」</td>
+<td>0.6427</td>
+<td>❌ 0.63~0.64 平坦分布</td>
+</tr>
+<tr>
+<td>「<strong>X 入门班的章节结构是什么</strong>」</td>
+<td><strong>0.7978</strong></td>
+<td>❌ <strong>完全错的课</strong></td>
+</tr>
+</tbody>
+</table>
+<p>注意第三行：<strong>用户已经明确说出对象名了，向量却给出了另一门课，分数还有 0.79。</strong></p>
+<p>这是把「按名查」「列列表」「推荐」「文档问答」全都塞进同一条向量链路时会遇到的典型问题 —— 前几类<strong>本质是结构化查询，不是语义相似度问题</strong>。</p>
+<!--more-->
+
+<h2 id="_1">一、三条硬经验</h2>
+<p>从上面这组数据能直接读出三件事：</p>
+<p><strong>① 精确问法必须先走结构化。</strong></p>
+<p>用户已经说出对象名了，向量却可能给出「语义最像」的另一个对象 —— 而且分数不低。<strong>这种情况光靠调阈值是救不了的</strong>，因为 0.79 看起来比正确的 0.75 还要「自信」。</p>
+<p><strong>② 泛化问法不要迷信语义。</strong></p>
+<p>当 top-k 的分数挤在一起（比如全在 0.63~0.64），说明模型<strong>根本没把它们区分开</strong>。这时候<strong>任何阈值都拦不住</strong> —— 你设 0.65 会全过，设 0.7 会全挂。应该走结构化筛选或者回落。</p>
+<p><strong>③ 主题词独特的问法，语义很好用。</strong></p>
+<p>「Galois 理论」这种专有名词，语义检索能准确命中。<strong>这才是语义兜底真正的价值区间</strong> —— 不是拿它当万金油。</p>
+<hr>
+<h2 id="_2">二、四层递进 + 回落（可直接套用的骨架）</h2>
+<div class="codehilite"><pre><span></span><code>① 结构化匹配：对象名 / 问题里直接含对象名（n-gram 反向撞名字）
+        ↓ 未命中
+② 意图词召回：难度/层级/类型词（入门·进阶·就业…）→ 按名称层级词筛候选
+        ↓ 未命中
+③ 语义兜底：语义召回 + 【分数门槛】
+        ↓ 未命中
+④ 回落：清空所有收窄条件，交给常规检索链路
+</code></pre></div>
+
+<h3 id="1">① 反向匹配：拿对象名去撞问题</h3>
+<p>对象总数不大时（几百条），<strong>把对象名当字典去撞用户问题</strong>，比在库里拼正则可靠得多。</p>
+<p>做法：生成问题的 3~8 字 n-gram，看哪一段被对象名包含。完整名出现给最高分，n-gram 越长越可信。</p>
+<p>⚠️ <strong>必须维护一份通用词黑名单</strong>（<code>课程</code> / <code>相关</code> / <code>哪些</code> / <code>介绍</code> …），否则这些词会命中一大片，路由直接失效。</p>
+<h3 id="3">③ 语义兜底的两条纪律</h3>
+<p><strong>纪律一：必须设分数门槛。</strong></p>
+<p>实测 <strong>0.72</strong> 左右是合适的切点 —— 独特主题词能到 0.75+，泛化问法挤在 0.63 附近，门槛正好把两者切开。</p>
+<p>低于门槛的，<strong>宁可回落，也不拿噪声冒充命中</strong>。</p>
+<p><strong>纪律二：候选名回表时只做精确匹配，绝不用模糊兜底。</strong></p>
+<p>语义召回的候选名里可能混进 <code>课程</code> 这类通用词。一旦走模糊匹配，等于把整库捞出来 —— 更糟的是，<strong>它会阻断回落</strong>：一个错误的命中占住了位置，后面的兜底逻辑就不会触发。</p>
+<h3 id="4">④ 回落是必须的，不是可选的</h3>
+<p>同一个语料库里经常有<strong>两套分类体系互不相干</strong>的数据。我遇到过的情况是：一套是「培训班系列」，另一套是「课程讲义」，<strong>讲义里的课程名在系列名里 0 命中</strong>。</p>
+<p>少了回落，用户问「有哪些 Python 相关课程」会被硬答成「<strong>没有</strong>」—— 而 Python 其实就在讲义里躺着。</p>
+<p><strong>实现要点</strong>：回落时必须把之前收窄的过滤条件（比如 <code>content_type == "xxx"</code>）<strong>清空</strong>再交给下游，否则下游带着收窄条件去查，照样 0 条。</p>
+<hr>
+<h2 id="llm">三、路由决策别只依赖 LLM 分类</h2>
+<p>多层路由通常靠「让 LLM 输出一个 intent 字段」来分流。<strong>不要只信它。</strong></p>
+<p>实测同一个批次里：</p>
+<ul>
+<li>「查询函数相关的<strong>选择题</strong>」→ 判成 <code>question</code> ✅</li>
+<li>「递归相关的<strong>多选题</strong>」→ 判成 <code>doc_qa</code> ❌ → 直接漏掉题库分支，走向量检索拿到 0 条</li>
+</ul>
+<p>两条问法的结构几乎一样，模型却给出不同结果。<strong>这类「不稳定」比「一直错」更难发现</strong> —— 因为它在前几个用例上表现完全正常，你很容易以为路由没问题。</p>
+<p><strong>对策</strong>：找出该意图的<strong>强信号词</strong>，用规则强行覆盖：</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">_override_intent</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">intent</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">term</span> <span class="ow">in</span> <span class="n">query</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">STRONG_SIGNAL_TERMS</span><span class="p">):</span>   <span class="c1"># 如题型词：选择题/多选题/判断题</span>
+        <span class="k">if</span> <span class="n">intent</span> <span class="o">!=</span> <span class="n">TARGET</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"意图纠正：</span><span class="si">{</span><span class="n">intent</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">TARGET</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">TARGET</span>
+    <span class="k">return</span> <span class="n">intent</span>
+</code></pre></div>
+
+<p>三个要点：</p>
+<ul>
+<li><strong>强信号要真的强</strong>（「选择题」几乎只有一个含义）。弱信号别硬兜，会误伤别的意图。</li>
+<li><strong>只做单向纠正</strong> —— 把漏判的补上，不要用它推翻模型判对的结果。</li>
+<li><strong>一定要打日志</strong>（<code>意图纠正：A → B</code>），否则这类兜底出了问题没人看得见。</li>
+</ul>
+<p><strong>一个推论</strong>：凡是「路由决定走哪条链路」的地方，都值得问一句 ——
+<strong>如果这一步判错了，用户看到的是不是「查不到」？</strong> 如果是，就该有规则兜底或者降级路径。</p>
+<hr>
+<h2 id="schema">四、把结构化数据接进既有链路：对齐 schema</h2>
+<p>结构化查询命中的结果，<strong>不要另写一条答题链路</strong>。</p>
+<p>把它转成既有检索链路输出的<strong>同一种文档结构</strong>（<code>text</code> / <code>source</code> / <code>title</code> / <code>score</code> / 业务字段），答案生成节点就<strong>一行都不用改</strong> —— 引用块、来源标注、图片提取全部自动复用。</p>
+<p><strong>最省事也最不容易出 bug 的接法：新数据源，旧 schema。</strong></p>
+<hr>
+<h2 id="_3">五、落库前先离线诊断</h2>
+<p>抽取阶段就要输出诊断，别等入库后才发现问题：</p>
+<ul>
+<li>总条数、缺失关键字段的条数、<strong>唯一键是否重复</strong>（它要当 upsert 的幂等键）</li>
+<li>子结构完整率（比如「全部模块的名称 / 编码 / 课时字段完整率都是 100%」）</li>
+<li><strong>假设验证</strong>：如果你根据某个规律做了派生（比如「同组内前一个对象是先修课」），
+  把分组统计打出来验证。我那次期望「每组 3 个成员」，实测 73 组 × 3 正好闭环 ——
+  <strong>假设被数据证实，派生字段才敢用</strong></li>
+<li><strong>语料里没有的字段要显式标注来源</strong>（如 <code>prerequisites_source="derived_from_..."</code>），
+  避免把推导值当成原始数据</li>
+</ul>
+<hr>
+<h2 id="_4">六、三个常见误判</h2>
+<p><strong>① 只看召回是否为空，不看召回对不对。</strong></p>
+<p>语义检索<strong>几乎不会返回空</strong> —— 它总会给你 5 条「很像」的东西。必须人工看 top-1 是否真的正确，否则你会把噪声当命中。</p>
+<p><strong>② 用模糊匹配做兜底。</strong></p>
+<p>在「回表取详情」这一步用模糊匹配，等于把噪声放大。模糊兜底只适合「用户给的主体名」这种高置信输入，<strong>不适合「语义召回出来的候选名」</strong>。</p>
+<p><strong>③ 以为分数归一化后就可比。</strong></p>
+<p><code>norm_score=True</code> 的分数<strong>只在同一次检索内可比</strong>，跨问法不可比 —— 上表里 0.64 和 0.75 都是各自那次检索的「top1」。</p>
+<hr>
+<h2 id="_5">七、把「跟着语料变」的参数抽成配置</h2>
+<p>上面提到的那些词表和阈值（通用词黑名单、层级同义词、语义分数门槛、字段标签）<strong>全部是跟着语料走的</strong>。</p>
+<p>写死在逻辑代码里，换一套数据就得改代码 —— 这会让系统变成「只能跑那份 demo」。</p>
+<p><strong>做法</strong>：集中到一个配置模块，逻辑代码只 import，不含字面量。</p>
+<ul>
+<li>字段标签用<strong>多别名</strong>：<code>("适合人群", "适用人群", "面向人群")</code> —— 换文档不用改代码</li>
+<li>分组/推导类规则给「开关 + 深度」参数（如 <code>SERIES_GROUP_PATH_DEPTH = 2</code>，设 0 即关闭），
+  别硬编码 <code>parts[:2]</code></li>
+<li>由配置<strong>生成</strong>正则时，可选分支要<strong>按标签长度降序</strong>排列 —— 否则短标签会先吃掉长标签
+  （<code>编码</code> 会匹配掉 <code>模块编码</code> 的前缀，这个 bug 很隐蔽）</li>
+</ul>
+<p><strong>判断标准：换一套数据，是否只需要改配置？</strong> 需要改逻辑，就说明耦合没拆干净。</p>
+<p><strong>同时要有边界感</strong>：不为「某份样例语料里恰好出现或缺失的某个值」做特化兜底。
+实例数据里的分类体系冲突、个别字段抽取不准，只要整体能跑就接受 —— <strong>特化兜底反而是负债</strong>。</p>
+<hr>
+<h2 id="_6">小结</h2>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>对策</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>精确问名却召回别的对象</td>
+<td>先走结构化匹配，别指望向量</td>
+</tr>
+<tr>
+<td>泛化问法分数挤在一起</td>
+<td>没有区分度，任何阈值都无效 → 走结构化或回落</td>
+</tr>
+<tr>
+<td>唯一有区分度的是专有名词</td>
+<td>这才是语义兜底的价值区间</td>
+</tr>
+<tr>
+<td>答案硬答「没有」</td>
+<td>缺回落（且回落时要清空收窄条件）</td>
+</tr>
+<tr>
+<td>LLM 意图分类时对时错</td>
+<td>用强信号词做单向纠正 + 打日志</td>
+</tr>
+<tr>
+<td>换语料就得改代码</td>
+<td>词表和阈值全部抽成配置</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心一句</strong>：能用字段查的，就别用向量查；向量只做兜底，且必须有门槛。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">一、三条硬经验</a></li>
+<li><a href="#_2">二、四层递进 + 回落（可直接套用的骨架）</a><ul>
+<li><a href="#1">① 反向匹配：拿对象名去撞问题</a></li>
+<li><a href="#3">③ 语义兜底的两条纪律</a></li>
+<li><a href="#4">④ 回落是必须的，不是可选的</a></li>
+</ul>
+</li>
+<li><a href="#llm">三、路由决策别只依赖 LLM 分类</a></li>
+<li><a href="#schema">四、把结构化数据接进既有链路：对齐 schema</a></li>
+<li><a href="#_3">五、落库前先离线诊断</a></li>
+<li><a href="#_4">六、三个常见误判</a></li>
+<li><a href="#_5">七、把「跟着语料变」的参数抽成配置</a></li>
+<li><a href="#_6">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

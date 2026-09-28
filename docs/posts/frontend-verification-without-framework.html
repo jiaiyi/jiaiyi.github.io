@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>验证前端不一定要装浏览器自动化框架 · 甲乙的技术笔记</title>
+<meta name="description" content="想在受限网络里验证一个 JS 渲染的页面，最容易卡在「下载 Chromium」这一步。其实系统上早就有 Chrome 了 —— 而且有两招根本不需要启动浏览器，就能覆盖大部分问题。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>验证前端不一定要装浏览器自动化框架</h1>
+  <div class="meta">
+    <time>2026-09-28</time>
+    <span class="sep">·</span>
+    <span class="reading">8 分钟读完</span>
+    <span class="tag">前端</span><span class="tag">测试</span><span class="tag">Chrome</span><span class="tag">调试</span>
+  </div>
+  <div class="content"><p>要验证一个前端页面到底渲染成什么样，第一反应通常是装 Playwright / Puppeteer。</p>
+<p>但它们都要下载一个 Chromium（约 196MB）。在企业网络或受限环境里，这一步经常失败 —— 我实测过：工具本体装得上，但 Chromium 从 Google 的存储服务下载<strong>三次重试全部超时</strong>。</p>
+<p><strong>别卡在这里反复重试。</strong> 系统上通常已经装了 Chrome 或 Edge，直接用就够。</p>
+<p>下面四招按「由轻到重」排列。<strong>前两招完全不启动浏览器</strong>，却能覆盖大部分实际问题。</p>
+<!--more-->
+
+<h2 id="http">一、HTTP 连通性批量扫（最轻）</h2>
+<div class="codehilite"><pre><span></span><code><span class="k">for</span><span class="w"> </span>p<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="s2">"/"</span><span class="w"> </span><span class="s2">"/a.html"</span><span class="w"> </span><span class="s2">"/b.html"</span><span class="w"> </span><span class="s2">"/api/x"</span><span class="w"> </span><span class="s2">"/health"</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">  </span><span class="nv">out</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s2">"%{http_code}"</span><span class="w"> </span><span class="s2">"http://127.0.0.1:9000</span><span class="nv">$p</span><span class="s2">"</span><span class="k">)</span>
+<span class="w">  </span><span class="nb">printf</span><span class="w"> </span><span class="s2">"  %-24s → %s\n"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$p</span><span class="s2">"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$out</span><span class="s2">"</span>
+<span class="k">done</span>
+</code></pre></div>
+
+<p>两个坑：</p>
+<p>⚠️ <strong><code>-w "%{size_download}"</code> 有时会打印 0</strong> —— 别据此判断响应体为空。要看内容就单独 <code>| wc -c</code>。</p>
+<p>⚠️ <strong>中文查询参数必须 URL 编码</strong>，否则 curl 发出的请求会失败，看起来像接口有 bug：</p>
+<div class="codehilite"><pre><span></span><code>curl<span class="w"> </span>-s<span class="w"> </span>-G<span class="w"> </span><span class="s2">"http://127.0.0.1:9000/courses"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--data-urlencode<span class="w"> </span><span class="s2">"category=数学"</span><span class="w"> </span>--data-urlencode<span class="w"> </span><span class="s2">"limit=20"</span>
+</code></pre></div>
+
+<hr>
+<h2 id="_1">二、前后端字段契约核对（最有价值的一招）</h2>
+<p><strong>前端最常见的 bug 不是「接口挂了」，而是字段对不上</strong> —— 页面读 <code>a.b</code>，接口返回的是 <code>a.c</code>。</p>
+<p>把「页面 JS 里读取的字段集合」和「接口实际返回的键集合」做差集，一次就能全暴露：</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 从页面 JS 里人工列出它读取的字段</span>
+<span class="n">need</span> <span class="o">=</span> <span class="p">{</span><span class="s1">'course_code'</span><span class="p">,</span> <span class="s1">'course_name'</span><span class="p">,</span> <span class="s1">'module_count'</span><span class="p">,</span> <span class="s1">'total_hours'</span><span class="p">}</span>
+
+<span class="n">d</span> <span class="o">=</span> <span class="n">get</span><span class="p">(</span><span class="s2">"/courses?limit=1"</span><span class="p">)[</span><span class="s1">'items'</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">need</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">d</span><span class="p">))</span>
+<span class="c1"># 空集 = 契约一致</span>
+<span class="c1"># 非空 = 这些字段页面会读到 undefined</span>
+</code></pre></div>
+
+<p>这一招的价值在于：<strong>它把「页面某个位置显示空白」这种模糊现象，变成了一份精确的字段清单</strong>。不用逐个点开页面找哪里没渲染出来。</p>
+<h3 id="total">配套纪律一：<code>total</code> 必须是「匹配总数」</h3>
+<p>写成 <code>len(items)</code> 会让页面把<strong>一页的条数</strong>当成总数。</p>
+<p>我踩过这个：课程页显示「共 50 门」，实际有 219 门 —— 因为接口返回的 <code>total</code> 其实是那一页的数量。</p>
+<p>分页接口应该统一返回：</p>
+<div class="codehilite"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"total"</span><span class="p">:</span><span class="w"> </span><span class="mi">219</span><span class="p">,</span><span class="w"> </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="err">...</span><span class="p">]</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<h3 id="_2">配套纪律二：统计口径与过滤口径必须同源</h3>
+<p>分类 chip 上的计数，和点进去之后的列表总数对不上 —— 几乎总是因为两处用了不同的过滤条件。</p>
+<p>实测过一个例子：chip 按 <code>category</code> 字段聚合得到 45，列表用 <code>category_path</code> 正则匹配得到 51。差额来自那条正则把「考试与升学 / 中学数学」这种<strong>带父级路径</strong>的也算了进来。</p>
+<p><strong>修法：把两处收敛到同一个查询构造函数。</strong> 不是去调正则，是让它们共用一份逻辑。</p>
+<hr>
+<h2 id="chrome-headless-js">三、系统 Chrome headless 截图（能拍到 JS 渲染后的真实内容）</h2>
+<div class="codehilite"><pre><span></span><code><span class="nv">CHROME</span><span class="o">=</span><span class="s2">"/c/Program Files/Google/Chrome/Application/chrome.exe"</span><span class="w">   </span><span class="c1"># Windows</span>
+<span class="s2">"</span><span class="nv">$CHROME</span><span class="s2">"</span><span class="w"> </span>--headless<span class="o">=</span>new<span class="w"> </span>--disable-gpu<span class="w"> </span>--hide-scrollbars<span class="w"> </span>--no-sandbox<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--window-size<span class="o">=</span><span class="m">1400</span>,1000<span class="w"> </span>--virtual-time-budget<span class="o">=</span><span class="m">9000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--screenshot<span class="o">=</span><span class="s2">"D:\\path\\out.png"</span><span class="w"> </span><span class="s2">"http://127.0.0.1:9000/page.html"</span>
+</code></pre></div>
+
+<p>几个关键点：</p>
+<ul>
+<li><strong><code>--virtual-time-budget=9000</code></strong> —— 给页面 9 秒<strong>虚拟时间</strong>，让它把 <code>fetch</code> 的数据拿回来、JS 渲染完再截图。<strong>没有这个参数，动态页面只能拍到空壳。</strong> 这是最容易被忽略的一个。</li>
+<li><strong>截图路径要用宿主 OS 的风格</strong>。Chrome 是 Windows 程序，你写 <code>/tmp/x.png</code> 会落到意料之外的位置。</li>
+<li><code>--window-size=W,H</code> 的高度要写够，否则长列表会被裁掉。</li>
+<li>拍完<strong>用 Read 工具直接看 PNG 核对</strong> —— 比读 HTML 可靠得多（HTML 里有内容不代表渲染出来了）。</li>
+</ul>
+<h3 id="_3">一个设计上的建议：深链接让页面更容易验证</h3>
+<p>把「展开详情」这类交互用 <strong>URL hash</strong> 承载（如 <code>#course=xxx</code>），就能直接截到详情态，不需要模拟点击。</p>
+<p>而且这<strong>同时是个真功能</strong> —— 链接可分享、浏览器前进后退可用。为了可测性做的设计，顺手把产品体验也改好了。</p>
+<hr>
+<h2 id="js">四、把页面的 JS 函数抽出来单测</h2>
+<p>有些渲染逻辑只有交互之后才触发（比如「点击展开后才渲染的区块」），截图覆盖不到。</p>
+<p>可以从页面源码里<strong>按括号配对截取函数源码</strong>，<code>eval</code> 之后喂用例：</p>
+<div class="codehilite"><pre><span></span><code><span class="kd">function</span><span class="w"> </span><span class="nx">pick</span><span class="p">(</span><span class="nx">src</span><span class="p">,</span><span class="w"> </span><span class="nx">name</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">src</span><span class="p">.</span><span class="nx">indexOf</span><span class="p">(</span><span class="s1">'function '</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">name</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s1">'('</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nx">depth</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0</span><span class="p">,</span><span class="w"> </span><span class="nx">started</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">let</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">i</span><span class="p">;</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="nx">src</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="w"> </span><span class="nx">j</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">src</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">'{'</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">depth</span><span class="o">++</span><span class="p">;</span><span class="w"> </span><span class="nx">started</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">src</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">'}'</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">depth</span><span class="o">--</span><span class="p">;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">started</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">depth</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="mf">0</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nx">src</span><span class="p">.</span><span class="nx">slice</span><span class="p">(</span><span class="nx">i</span><span class="p">,</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mf">1</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nb">eval</span><span class="p">(</span><span class="nx">pick</span><span class="p">(</span><span class="nx">html</span><span class="p">,</span><span class="w"> </span><span class="s1">'myRenderFn'</span><span class="p">));</span>
+<span class="c1">// 然后喂正常用例 + 边界用例（没有输入 / 空结果 / 另一种写法）</span>
+</code></pre></div>
+
+<p><strong>为什么必须从源码抽</strong>：另写一份「等价实现」等于测了个假的 —— 页面改了你的测试不知道，还全绿。<strong>抽源码测的才是页面真正在跑的那份逻辑。</strong></p>
+<p>⚠️ 写这类测试时，<strong>把用例里的模板字符串放到 <code>.js</code> 文件里跑</strong>，不要塞进 bash heredoc ——
+<code>${...}</code> 会被 shell 抢先解释，报 <code>Bad substitution</code>。</p>
+<hr>
+<h2 id="_4">五、收尾清单</h2>
+<ul>
+<li><strong>前后端地址统一用同源相对路径</strong>（<code>location.origin</code>），别硬编码 <code>http://127.0.0.1:8000</code> ——
+  换部署环境就失效，还自带跨域问题</li>
+<li><strong>多服务合并成单端口时，不要重写已有路由定义</strong>（会丢掉各服务独立启动的能力）。
+  把子应用路由合并进主应用、跳过框架级路由（<code>/docs</code>、<code>/openapi.json</code>、<code>/redoc</code>）就行</li>
+<li><strong>改完接口/页面记得重启服务再验证</strong> —— 热重载往往不覆盖新加的文件</li>
+</ul>
+<hr>
+<h2 id="_5">小结</h2>
+<table>
+<thead>
+<tr>
+<th>招数</th>
+<th>成本</th>
+<th>能解决什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HTTP 连通性扫</td>
+<td>最低</td>
+<td>路径/接口是否活着</td>
+</tr>
+<tr>
+<td><strong>字段契约核对</strong></td>
+<td>低</td>
+<td><strong>页面读到 undefined 的字段（最高频 bug）</strong></td>
+</tr>
+<tr>
+<td>headless 截图</td>
+<td>中</td>
+<td>JS 渲染后的真实观感</td>
+</tr>
+<tr>
+<td>抽源码单测</td>
+<td>中高</td>
+<td>交互后才触发的逻辑</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心认知</strong>：验证前端最重的依赖是「下载一个浏览器」，而那个依赖<strong>往往是不必要的</strong> ——
+系统里已有的 Chrome 完全能胜任。</p>
+<p>按「由轻到重」的顺序试，大部分问题在前两步就能定位，根本轮不到启动浏览器。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#http">一、HTTP 连通性批量扫（最轻）</a></li>
+<li><a href="#_1">二、前后端字段契约核对（最有价值的一招）</a><ul>
+<li><a href="#total">配套纪律一：total 必须是「匹配总数」</a></li>
+<li><a href="#_2">配套纪律二：统计口径与过滤口径必须同源</a></li>
+</ul>
+</li>
+<li><a href="#chrome-headless-js">三、系统 Chrome headless 截图（能拍到 JS 渲染后的真实内容）</a><ul>
+<li><a href="#_3">一个设计上的建议：深链接让页面更容易验证</a></li>
+</ul>
+</li>
+<li><a href="#js">四、把页面的 JS 函数抽出来单测</a></li>
+<li><a href="#_4">五、收尾清单</a></li>
+<li><a href="#_5">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

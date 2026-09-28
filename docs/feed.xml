@@ -5,6 +5,60 @@
   <link>https://jiaiyi.github.io</link>
   <description>Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。</description>
   <item>
+    <title>RAG 检索路由：为什么「精确问课程名」反而答错</title>
+    <link>https://jiaiyi.github.io/posts/rag-retrieval-routing.html</link>
+    <guid>https://jiaiyi.github.io/posts/rag-retrieval-routing.html</guid>
+    <description>一个反直觉的实测结果：用户已经说出对象名字了，向量检索给出的却是另一门课，而且相似度分数高达 0.79。光看分数救不了 —— 这类问题必须靠路由解决。</description>
+  </item>
+  <item>
+    <title>RAG 切片调优：先诊断，别先调参</title>
+    <link>https://jiaiyi.github.io/posts/rag-chunking-tuning.html</link>
+    <guid>https://jiaiyi.github.io/posts/rag-chunking-tuning.html</guid>
+    <description>检索回来的是半句话、或者召回一堆只有一个标题的空片段 —— 这种问题调 chunk_size 之前，得先量出来它到底有多碎。凭感觉调参只会来回打转。</description>
+  </item>
+  <item>
+    <title>PyCharm 里解释器加不进去？问题可能不在解释器</title>
+    <link>https://jiaiyi.github.io/posts/pycharm-uv-interpreter.html</link>
+    <guid>https://jiaiyi.github.io/posts/pycharm-uv-interpreter.html</guid>
+    <description>在 PyCharm 里给 uv 项目配解释器，选了路径却报「不是有效 Python」，或者加完面板里依然不显示。查了半天解释器，其实根因在 .iml 文件上。</description>
+  </item>
+  <item>
+    <title>Hermes 的五套「插件」根本不是一回事</title>
+    <link>https://jiaiyi.github.io/posts/hermes-plugin-ecosystem.html</link>
+    <guid>https://jiaiyi.github.io/posts/hermes-plugin-ecosystem.html</guid>
+    <description>装上插件却不生效、改了配置没反应 —— 大多数时候是因为把五套互不相干的扩展机制混为一谈了。先分清是哪一类，再看对应的开关。</description>
+  </item>
+  <item>
+    <title>用 GitHub Pages 搭博客，我踩的四个坑</title>
+    <link>https://jiaiyi.github.io/posts/github-pages-pitfalls.html</link>
+    <guid>https://jiaiyi.github.io/posts/github-pages-pitfalls.html</guid>
+    <description>从建仓库到自动发布，全程没用任何框架。踩到四件事：SSH 建不了仓库、凭据会被偷偷存下来、预构建的站点会被 Jekyll 搅乱、以及「返回 200」不等于「发布成功」。</description>
+  </item>
+  <item>
+    <title>Windows 上 git 连不上 GitHub，先别急着怪网络</title>
+    <link>https://jiaiyi.github.io/posts/git-cannot-reach-github.html</link>
+    <guid>https://jiaiyi.github.io/posts/git-cannot-reach-github.html</guid>
+    <description>浏览器能打开 GitHub，终端里 git clone 却卡住超时。代理明明开着，为什么 git 不走？因为它压根不读 Windows 的「系统代理」设置。</description>
+  </item>
+  <item>
+    <title>git push 报认证失败，但代码可能早就推上去了</title>
+    <link>https://jiaiyi.github.io/posts/git-auth-and-repo-hygiene.html</link>
+    <guid>https://jiaiyi.github.io/posts/git-auth-and-repo-hygiene.html</guid>
+    <description>看到 Authentication failed 就急着换令牌、改配置，是常见的第一步错。先花 10 秒确认远端到底指向哪个 commit，能省掉一大圈无效折腾。</description>
+  </item>
+  <item>
+    <title>验证前端不一定要装浏览器自动化框架</title>
+    <link>https://jiaiyi.github.io/posts/frontend-verification-without-framework.html</link>
+    <guid>https://jiaiyi.github.io/posts/frontend-verification-without-framework.html</guid>
+    <description>想在受限网络里验证一个 JS 渲染的页面，最容易卡在「下载 Chromium」这一步。其实系统上早就有 Chrome 了 —— 而且有两招根本不需要启动浏览器，就能覆盖大部分问题。</description>
+  </item>
+  <item>
+    <title>打包好的 Electron 应用「启动即崩」？先查环境变量</title>
+    <link>https://jiaiyi.github.io/posts/electron-launch-verify.html</link>
+    <guid>https://jiaiyi.github.io/posts/electron-launch-verify.html</guid>
+    <description>进程秒退、exit code 0、日志文件根本不存在 —— 看起来像构建坏了或者 exe 被截断。但如果它是在 AI 编程助手的 shell 里启动的，八成是环境变量被污染了。</description>
+  </item>
+  <item>
     <title>WSL 里 curl 一片空白，Windows 却好得很</title>
     <link>https://jiaiyi.github.io/posts/wsl-proxy.html</link>
     <guid>https://jiaiyi.github.io/posts/wsl-proxy.html</guid>

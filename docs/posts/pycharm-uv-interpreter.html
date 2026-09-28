@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PyCharm 里解释器加不进去？问题可能不在解释器 · 甲乙的技术笔记</title>
+<meta name="description" content="在 PyCharm 里给 uv 项目配解释器，选了路径却报「不是有效 Python」，或者加完面板里依然不显示。查了半天解释器，其实根因在 .iml 文件上。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>PyCharm 里解释器加不进去？问题可能不在解释器</h1>
+  <div class="meta">
+    <time>2026-09-28</time>
+    <span class="sep">·</span>
+    <span class="reading">10 分钟读完</span>
+    <span class="tag">PyCharm</span><span class="tag">uv</span><span class="tag">Python</span><span class="tag">环境配置</span>
+  </div>
+  <div class="content"><p>给一个 uv 管理的项目配 PyCharm 解释器，你可能会遇到连串怪事：</p>
+<ul>
+<li>运行配置的解释器下拉里<strong>只有别的项目的环境</strong>，本项目的 <code>.venv</code> 不在列表里</li>
+<li>添加解释器时报「<strong>不是有效 Python</strong>」</li>
+<li>更诡异的是：添加后<strong>面板里依然不显示</strong>，但日志里能看到 SDK 明明建出来了</li>
+</ul>
+<p>这三种症状看起来都在「解释器」上，实际根因往往在<strong>别处</strong>。按下面顺序查，比盲目试要快得多。</p>
+<!--more-->
+
+<h2 id="1-venv">第 1 步：确认项目自己的 venv 能用</h2>
+<div class="codehilite"><pre><span></span><code>&lt;project&gt;/.venv/Scripts/python.exe<span class="w"> </span>-V
+&lt;project&gt;/.venv/Scripts/python.exe<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import sys;print(sys.executable);print(sys.prefix);print(sys.base_prefix)"</span>
+</code></pre></div>
+
+<p><strong>优先用项目内的 <code>.venv</code>，不要复用其他项目的环境</strong> —— 依赖会互相干扰，这种问题排查起来比新建一个环境麻烦得多。</p>
+<p>然后看一眼 <code>.venv/pyvenv.cfg</code>。如果里面有 <code>uv = &lt;版本&gt;</code>，且 <code>version_info</code> 只写了主次版本（如 <code>3.11</code>）而<strong>没有</strong> <code>version = 3.11.x</code> 这种完整字段 —— 说明这是 <strong>uv 建的 venv</strong>。</p>
+<p>记住这一点，第 3 步要用。</p>
+<hr>
+<h2 id="2-iml">第 2 步：检查 <code>.iml</code> 是否存在且内容正确</h2>
+<p><strong>这是最容易被忽略、但影响最大的一层。</strong></p>
+<p><code>.idea/modules.xml</code> 里引用的 <code>.iml</code> 如果<strong>文件不存在</strong>，PyCharm 会创建一个<strong>没有内容根的空模块</strong>。之后无论你怎么加解释器，关联都会失败。</p>
+<div class="codehilite"><pre><span></span><code>cat<span class="w"> </span>&lt;project&gt;/.idea/modules.xml
+ls<span class="w"> </span>-la<span class="w"> </span>&lt;project&gt;/.idea/<span class="w">          </span><span class="c1"># 确认 modules.xml 提到的那个 .iml 真的存在</span>
+</code></pre></div>
+
+<p><code>.iml</code> 里有个关键规则，很容易搞错：</p>
+<blockquote>
+<p><strong>在 <code>.idea/</code> 目录下的 <code>.iml</code>，<code>$MODULE_DIR$</code> 指的是「项目根」，不是 <code>.idea</code> 目录。</strong></p>
+</blockquote>
+<p>所以内容根要写 <code>file://$MODULE_DIR$</code>，<strong>不要</strong>写 <code>file://$MODULE_DIR$/..</code> —— 后者会指向上一级目录，把<strong>同级其他项目</strong>一起圈进来。症状是：日志里多个无关项目挂在同一个 projectId 下，Git 面板里冒出一堆不相干的仓库。</p>
+<p>一个可用的 uv 项目 <code>.iml</code> 模板：</p>
+<div class="codehilite"><pre><span></span><code><span class="cp">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</span>
+<span class="nt">&lt;module</span><span class="w"> </span><span class="na">external.system.id=</span><span class="s">"pyproject.toml"</span><span class="w"> </span><span class="na">type=</span><span class="s">"PYTHON_MODULE"</span><span class="w"> </span><span class="na">version=</span><span class="s">"4"</span><span class="nt">&gt;</span>
+<span class="w">  </span><span class="nt">&lt;component</span><span class="w"> </span><span class="na">name=</span><span class="s">"NewModuleRootManager"</span><span class="nt">&gt;</span>
+<span class="w">    </span><span class="nt">&lt;content</span><span class="w"> </span><span class="na">url=</span><span class="s">"file://$MODULE_DIR$"</span><span class="nt">&gt;</span>
+<span class="w">      </span><span class="nt">&lt;excludeFolder</span><span class="w"> </span><span class="na">url=</span><span class="s">"file://$MODULE_DIR$/.venv"</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">      </span><span class="nt">&lt;excludeFolder</span><span class="w"> </span><span class="na">url=</span><span class="s">"file://$MODULE_DIR$/.git"</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">      </span><span class="nt">&lt;excludeFolder</span><span class="w"> </span><span class="na">url=</span><span class="s">"file://$MODULE_DIR$/logs"</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">      </span><span class="nt">&lt;excludeFolder</span><span class="w"> </span><span class="na">url=</span><span class="s">"file://$MODULE_DIR$/output"</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">    </span><span class="nt">&lt;/content&gt;</span>
+<span class="w">    </span><span class="nt">&lt;orderEntry</span><span class="w"> </span><span class="na">type=</span><span class="s">"inheritedJdk"</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">    </span><span class="nt">&lt;orderEntry</span><span class="w"> </span><span class="na">type=</span><span class="s">"sourceFolder"</span><span class="w"> </span><span class="na">forTests=</span><span class="s">"false"</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;/component&gt;</span>
+<span class="nt">&lt;/module&gt;</span>
+</code></pre></div>
+
+<p><code>external.system.id="pyproject.toml"</code> 表示这个模块由 pyproject / uv 管理。</p>
+<p>同时 <code>.idea/misc.xml</code> 里的 <code>project-jdk-name</code> 要写成该解释器在 PyCharm 里的<strong>准确名称</strong>（uv 环境通常是 <code>uv (&lt;venv 所在目录名&gt;)</code>）。</p>
+<blockquote>
+<p>⚠️ <strong>改完 <code>.iml</code> / <code>misc.xml</code> 必须完全重启 PyCharm</strong>（File → Exit 再重新打开）。
+模块结构在内存里有缓存，只改文件不重启是不生效的 —— 这是「解释器死活加不进去」最常见的遗留原因。</p>
+</blockquote>
+<hr>
+<h2 id="3-uv">第 3 步：添加解释器时类型必须选 <code>uv</code></h2>
+<p>路径：<code>Settings → 项目 → Python 解释器 → 添加解释器 → 添加本地解释器</code></p>
+<ul>
+<li><strong>类型选 <code>uv</code>，环境选「选择现有」，路径指向 <code>.venv/Scripts/python.exe</code></strong></li>
+<li><strong>不要选 <code>Virtualenv</code></strong> —— 对 uv 建的 venv，PyCharm 按 Virtualenv 的规则校验时会判定「不是有效 Python」</li>
+<li>选「类型 = <code>Python</code>」也能注册成功，但产物是 Virtualenv 风格；选 <code>uv</code> 会得到 <code>UvSdkFlavor</code>，与 pyproject/uv 的集成更完整</li>
+</ul>
+<p>这就是第 1 步为什么要确认「是不是 uv 建的 venv」—— 类型选错，后面全白搭。</p>
+<hr>
+<h2 id="4">第 4 步：解释器注册表不在项目里，改文件解决不了</h2>
+<ul>
+<li>全局 SDK 表在 <code>%APPDATA%\JetBrains\&lt;Product&gt;&lt;版本&gt;\options\jdk.table.xml</code></li>
+<li>但新版 PyCharm 实际记在 <strong>Workspace Model</strong> 里：新增的 SDK 在 <code>jdk.table.xml</code> 里可能根本查不到，只在 <code>caches/</code> 和日志里留痕</li>
+</ul>
+<p><strong>所以只能通过 UI 注册一次，手写配置文件不可靠</strong> —— PyCharm 退出时会用内存态把文件覆盖掉。</p>
+<hr>
+<h2 id="5-idealog">第 5 步：用 idea.log 定位真实原因</h2>
+<p>日志在 <code>%LOCALAPPDATA%\JetBrains\&lt;Product&gt;&lt;版本&gt;\log\idea.log</code>：</p>
+<div class="codehilite"><pre><span></span><code>grep<span class="w"> </span>-n<span class="w"> </span>-iE<span class="w"> </span><span class="s2">"interpreter|AssertionError|PythonSdk|不是有效|has not paths|setAssociationToModule"</span><span class="w"> </span>idea.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-40
+</code></pre></div>
+
+<p>常见信号怎么读：</p>
+<table>
+<thead>
+<tr>
+<th>日志内容</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AssertionError: Module Module: 'x' has not paths, and can't be associated</code></td>
+<td><code>.iml</code> 缺失或内容根不对 → <strong>回第 2 步</strong></td>
+</tr>
+<tr>
+<td>已出现 <code>SDK Python 3.11 (xxx)</code>，但面板里仍没有解释器</td>
+<td>SDK 建了、但<strong>关联失败</strong> → 是模块问题，不是解释器问题，回第 2 步</td>
+</tr>
+<tr>
+<td><code>... 不是系统 Python</code></td>
+<td>在「系统解释器」入口选了 venv 里的解释器 → 换回 <code>uv</code> / 「现有环境」入口</td>
+</tr>
+</tbody>
+</table>
+<p><strong>第二行特别值得注意</strong>：它说明解释器本身没问题，是「挂不到模块上」。这时候继续在解释器上折腾是徒劳的。</p>
+<hr>
+<h2 id="_1">运行配置的几个要点</h2>
+<table>
+<thead>
+<tr>
+<th>设置</th>
+<th>取值</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>解释器</td>
+<td><code>.venv/Scripts/python.exe</code></td>
+<td>——</td>
+</tr>
+<tr>
+<td>「将内容根添加到 PYTHONPATH」</td>
+<td><strong>必须勾选</strong></td>
+<td>代码用 <code>from app.xxx import ...</code> 这类绝对导入</td>
+</tr>
+<tr>
+<td>「工作目录」</td>
+<td>见下</td>
+<td>关键，容易踩</td>
+</tr>
+<tr>
+<td>环境变量文件</td>
+<td>指向项目 <code>.env</code></td>
+<td>部分模块的 <code>load_dotenv()</code> 依赖 cwd 或该配置</td>
+</tr>
+</tbody>
+</table>
+<p><strong>工作目录这条单独说</strong>：如果目标脚本用<strong>字符串导入</strong>启动（比如 <code>uvicorn.run("mod:app", reload=True)</code>），工作目录要<strong>保持脚本所在目录</strong>。uvicorn 靠 cwd 找模块，你把工作目录改成项目根，就会 <code>ModuleNotFoundError</code>。</p>
+<p>另一种更稳的启动方式（走命令行）：</p>
+<div class="codehilite"><pre><span></span><code><span class="nb">set</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span>&lt;项目根&gt;
+&lt;项目根&gt;/.venv/Scripts/python.exe<span class="w"> </span>-m<span class="w"> </span>uvicorn<span class="w"> </span>&lt;模块&gt;:app<span class="w"> </span>--app-dir<span class="w"> </span>&lt;脚本目录&gt;
+</code></pre></div>
+
+<p>另外注意：<code>uvicorn --reload</code> <strong>只监听 <code>--app-dir</code> 下的目录</strong>。你改了该目录之外的文件，它不会触发热重载，得手动重启服务 —— 这个很容易误以为「代码没生效」。</p>
+<hr>
+<h2 id="_2">两个额外提醒</h2>
+<p><strong>① PyCharm 的「自动导入」会帮倒忙。</strong></p>
+<p>引用一个未定义的名字时，它会在已安装的包里随便挑一个同名符号 import 进来。问题在于有些包的 <code>examples/</code> 脚本<strong>在模块级就执行代码</strong>（连接、打印、甚至起服务），一 import 直接把整个程序搞挂 —— 而且抛出的异常看起来和你的代码毫不相干，很难往「自动导入」上想。</p>
+<p>所以：<strong>编辑器自动补的 import 必须逐行核对</strong>；引用未定义名字时，优先自己写清楚，别接受自动修正。</p>
+<p><strong>② 别把 <code>.idea/</code> 提交进版本库。</strong></p>
+<p>那是 IDE 的本地状态，多人协作会天天冲突。如果已经被跟踪了：</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>rm<span class="w"> </span>-r<span class="w"> </span>--cached<span class="w"> </span>.idea<span class="w">        </span><span class="c1"># 取消跟踪，本地文件保留</span>
+</code></pre></div>
+
+<hr>
+<h2 id="_3">小结</h2>
+<table>
+<thead>
+<tr>
+<th>症状</th>
+<th>先查哪里</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>解释器下拉里没有本项目 venv</td>
+<td><code>.idea/*.iml</code> 是否存在（第 2 步）</td>
+</tr>
+<tr>
+<td>报「不是有效 Python」</td>
+<td>添加时的类型是否选了 <code>uv</code>（第 3 步）</td>
+</tr>
+<tr>
+<td>加完不显示，但日志显示 SDK 已建</td>
+<td>模块关联失败 → <code>.iml</code> 内容根（第 2 步）</td>
+</tr>
+<tr>
+<td>想手写配置绕过</td>
+<td>行不通，UI 注册是唯一可靠路径（第 4 步）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心一句话</strong>：解释器加不上，多数时候不是解释器的问题，是<strong>模块没有内容根</strong> —— 先去看 <code>.iml</code>。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#1-venv">第 1 步：确认项目自己的 venv 能用</a></li>
+<li><a href="#2-iml">第 2 步：检查 .iml 是否存在且内容正确</a></li>
+<li><a href="#3-uv">第 3 步：添加解释器时类型必须选 uv</a></li>
+<li><a href="#4">第 4 步：解释器注册表不在项目里，改文件解决不了</a></li>
+<li><a href="#5-idealog">第 5 步：用 idea.log 定位真实原因</a></li>
+<li><a href="#_1">运行配置的几个要点</a></li>
+<li><a href="#_2">两个额外提醒</a></li>
+<li><a href="#_3">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 切片调优：先诊断，别先调参 · 甲乙的技术笔记</title>
+<meta name="description" content="检索回来的是半句话、或者召回一堆只有一个标题的空片段 —— 这种问题调 chunk_size 之前，得先量出来它到底有多碎。凭感觉调参只会来回打转。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>RAG 切片调优：先诊断，别先调参</h1>
+  <div class="meta">
+    <time>2026-09-28</time>
+    <span class="sep">·</span>
+    <span class="reading">9 分钟读完</span>
+    <span class="tag">RAG</span><span class="tag">检索</span><span class="tag">中文处理</span><span class="tag">向量数据库</span>
+  </div>
+  <div class="content"><p>RAG 效果不好时，最想去调的就是 <code>chunk_size</code>。但<strong>切片质量问题只有看真实数据才暴露</strong> —— 凭感觉把小改大、大改小，来回试几轮也很难收敛。</p>
+<p>正确顺序是：<strong>先量，再改，然后验证。</strong></p>
+<!--more-->
+
+<h2 id="_1">一、先诊断：三个指标定位问题</h2>
+<p>离线跑一段，不落盘、不进向量库：</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+<span class="n">H</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^#{1,6}\s+.*$"</span><span class="p">)</span>          <span class="c1"># markdown 标题行</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">body</span><span class="p">(</span><span class="n">t</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""去掉标题行后的正文。</span>
+
+<span class="sd">    ⚠️ 必须先剔标题再数字数 —— 否则「标题自己成了一条切片」这种情况</span>
+<span class="sd">    会被算成有内容，得不到正确判断。</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+        <span class="n">l</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="p">(</span><span class="n">t</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">H</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+<span class="n">lens</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">body</span><span class="p">(</span><span class="n">c</span><span class="p">[</span><span class="s2">"content"</span><span class="p">]))</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"切片数 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)</span><span class="si">}</span><span class="s2"> | 正文 最短 </span><span class="si">{</span><span class="n">lens</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> / 中位 </span><span class="si">{</span><span class="n">lens</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">lens</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="si">}</span><span class="s2"> / 最长 </span><span class="si">{</span><span class="n">lens</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"正文&lt;30字碎片: </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">lens</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">30</span><span class="p">)</span><span class="si">}</span><span class="s2"> 条"</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>中文技术讲义的健康区间</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>健康区间</th>
+<th>异常说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正文中位</td>
+<td>150~400 字</td>
+<td>&lt;100 → 切太碎，上下文不足</td>
+</tr>
+<tr>
+<td>正文 &lt;30 字占比</td>
+<td>0%</td>
+<td>&gt;10% → 存在「纯标题碎片」</td>
+</tr>
+<tr>
+<td>正文最长</td>
+<td>≤ chunk_size</td>
+<td>明显小于 → 大段被腰斩</td>
+</tr>
+<tr>
+<td>最短切片</td>
+<td>&gt;0</td>
+<td>=0 → 就是纯标题碎片</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">「纯标题碎片」是怎么来的</h3>
+<p>它长这样：</p>
+<div class="codehilite"><pre><span></span><code>'# 高等数学'
+</code></pre></div>
+
+<p><strong>根因</strong>：切分器把标题行也放进了内容缓冲（<code>current_lines = [line]</code>）。当某个标题下面<strong>紧跟另一个标题、中间没有正文</strong>时，就切出一个只有标题的片。</p>
+<p>这种片段会被向量化、占库，<strong>检索时可能被召回到零信息片段</strong> —— 用户拿到一个标题，什么答案都组织不出来。</p>
+<p>必须丢掉。但要在切分逻辑里丢，不是事后清理。</p>
+<hr>
+<h2 id="_3">二、三层切分：标题栈 → 二次切分 → 碎片过滤</h2>
+<h3 id="1-chapter-parent">① 标题栈（维护层级，同时产出 chapter / parent）</h3>
+<p>平切法只能得到「无层级的段落列表」。要拿到 <code>chapter</code>（所属章）和 <code>parent_title</code>（父标题），必须按 <code>#</code> 的数量维护一个栈：</p>
+<div class="codehilite"><pre><span></span><code><span class="n">stack</span> <span class="o">=</span> <span class="p">[]</span>                       <span class="c1"># [{"level": int, "text": str}, ...]</span>
+
+<span class="c1"># 遇到标题 level 时：</span>
+<span class="k">while</span> <span class="n">stack</span> <span class="ow">and</span> <span class="n">stack</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s2">"level"</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">level</span><span class="p">:</span>   <span class="c1"># 把不可能成为祖先的弹掉</span>
+    <span class="n">stack</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+
+<span class="n">current_parent</span>  <span class="o">=</span> <span class="n">stack</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s2">"text"</span><span class="p">]</span> <span class="k">if</span> <span class="n">stack</span> <span class="k">else</span> <span class="s2">""</span>    <span class="c1"># 父标题</span>
+<span class="n">current_chapter</span> <span class="o">=</span> <span class="n">stack</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">"text"</span><span class="p">]</span>  <span class="k">if</span> <span class="n">stack</span> <span class="k">else</span> <span class="n">text</span>  <span class="c1"># 栈底 = 顶级章节</span>
+<span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"level"</span><span class="p">:</span> <span class="n">level</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">:</span> <span class="n">text</span><span class="p">})</span>
+</code></pre></div>
+
+<p>两个关键点：</p>
+<ul>
+<li><strong><code>parent</code> 取 <code>stack[-1]</code>，<code>chapter</code> 取 <code>stack[0]</code></strong></li>
+<li>跨章时栈会被弹空 → <code>parent</code> 自然变成空字符串，<strong>这是正确行为</strong>，不用特殊处理</li>
+</ul>
+<blockquote>
+<p>⚠️ <strong>代码块里的 <code>#</code> 会被误判成标题</strong> —— Python 注释就是以 <code>#</code> 开头的！
+必须先用 <code>```</code> / <code>~~~</code> 的围栏状态机屏蔽掉。实测过有些课程文档的代码行<strong>没有任何样式</strong>，
+只有 <code>Consolas</code> 字体，所以靠样式名判断也会漏。这个坑只有跑真实文档才发现。</p>
+</blockquote>
+<h3 id="2">② 二次切分（控制块大小）</h3>
+<div class="codehilite"><pre><span></span><code><span class="n">RecursiveCharacterTextSplitter</span><span class="p">(</span>
+    <span class="n">chunk_size</span><span class="o">=</span><span class="n">CHUNK_SIZE</span><span class="p">,</span>
+    <span class="n">chunk_overlap</span><span class="o">=</span><span class="n">CHUNK_OVERLAP</span><span class="p">,</span>
+    <span class="n">separators</span><span class="o">=</span><span class="p">[</span><span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"。"</span><span class="p">,</span> <span class="s2">"！"</span><span class="p">,</span> <span class="s2">"；"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">],</span>   <span class="c1"># ★ 中文标点要进来</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<p><strong>中文技术讲义建议 <code>chunk_size = 500~800</code>，<code>overlap ≈ chunk_size / 6</code>。</strong></p>
+<p><code>200</code> 是英文短文本项目的惯性值。中文 200 字<strong>只够装一两句话</strong>，技术解释会被切碎 —— 检索回来的是半截，反而误导模型。</p>
+<h3 id="3">③ 碎片过滤（顺序很重要：先过滤，再编号）</h3>
+<div class="codehilite"><pre><span></span><code><span class="n">sub_chunks</span> <span class="o">=</span> <span class="n">splitter</span><span class="o">.</span><span class="n">split_text</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="s2">"content"</span><span class="p">])</span>
+
+<span class="n">kept</span> <span class="o">=</span> <span class="p">[</span><span class="n">sc</span> <span class="k">for</span> <span class="n">sc</span> <span class="ow">in</span> <span class="n">sub_chunks</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">body</span><span class="p">(</span><span class="n">sc</span><span class="p">))</span> <span class="o">&gt;=</span> <span class="n">MIN_CHUNK_BODY_CHARS</span><span class="p">]</span>   <span class="c1"># ★ 先过滤</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">kept</span><span class="p">:</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"「</span><span class="si">{</span><span class="n">chunk</span><span class="p">[</span><span class="s1">'title'</span><span class="p">]</span><span class="si">}</span><span class="s2">」下没有有效正文，已跳过该小节"</span><span class="p">)</span>
+    <span class="k">continue</span>
+
+<span class="n">has_multi</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">kept</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span>                       <span class="c1"># ★ 用过滤后的长度判断</span>
+
+<span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">sc</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">kept</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>        <span class="c1"># ★ 编号基于 kept，保证 _N 不跳号</span>
+    <span class="n">title</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">chunk</span><span class="p">[</span><span class="s1">'title'</span><span class="p">]</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">has_multi</span> <span class="k">else</span> <span class="n">chunk</span><span class="p">[</span><span class="s2">"title"</span><span class="p">]</span>
+</code></pre></div>
+
+<p><code>MIN_CHUNK_BODY_CHARS = 30</code> 是个好起点。</p>
+<p><strong>「先过滤再编号」这条不能反</strong> —— 否则会出现 <code>doc_1 / doc_3 / doc_7</code> 这种跳号，下游看到会以为数据缺失。</p>
+<h3 id="_4">实测效果</h3>
+<p>一份中文讲义，<code>chunk_size</code> 从 200 改到 600 并加上过滤之后：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>改前</th>
+<th>改后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>切片数</td>
+<td>55</td>
+<td>29</td>
+</tr>
+<tr>
+<td>碎片率</td>
+<td>21%</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>正文中位</td>
+<td>100</td>
+<td>147</td>
+</tr>
+<tr>
+<td>正文最长</td>
+<td>189</td>
+<td>454</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="_5">三、改参数 = 旧数据全部作废</h2>
+<p>这一点必须先想清楚：<strong><code>chunk_size</code> 等常量一改，库里已切好的切片和后续新导入的就天然不一致了。</strong></p>
+<p>两种处理方式：</p>
+<ul>
+<li><strong>导入按幂等键（如 <code>item_name</code>）先删后插</strong> → 只需重导受影响的文档，不用清库</li>
+<li>否则只能<strong>整库清空，按新参数统一重导</strong></li>
+</ul>
+<p>👉 <strong>结论：趁库里数据少的时候就把切分参数定死。</strong> 等全量灌进去再改，等于白跑一遍。</p>
+<hr>
+<h2 id="_6">四、落库后校验：区分「切分对」和「写对了」</h2>
+<p><strong>离线一致 ≠ 落库一致</strong>，必须查库复核：</p>
+<div class="codehilite"><pre><span></span><code><span class="n">rows</span><span class="p">,</span> <span class="n">off</span> <span class="o">=</span> <span class="p">[],</span> <span class="mi">0</span>
+<span class="k">while</span> <span class="kc">True</span><span class="p">:</span>                                    <span class="c1"># ★ 分页 query 计数</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">collection_name</span><span class="o">=</span><span class="n">NAME</span><span class="p">,</span>
+                <span class="nb">filter</span><span class="o">=</span><span class="s2">"chunk_id &gt; 0"</span><span class="p">,</span>
+                <span class="n">output_fields</span><span class="o">=</span><span class="p">[</span><span class="s2">"item_name"</span><span class="p">,</span> <span class="s2">"chapter_name"</span><span class="p">,</span> <span class="s2">"title"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">],</span>
+                <span class="n">limit</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">off</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">b</span><span class="p">:</span>
+        <span class="k">break</span>
+    <span class="n">rows</span> <span class="o">+=</span> <span class="n">b</span>
+    <span class="n">off</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">500</span><span class="p">:</span>
+        <span class="k">break</span>
+</code></pre></div>
+
+<p><strong>核数一律用 <code>query</code> 分页计数，不要用 <code>row_count</code> / <code>num_entities</code>。</strong> 后者包含「已删除但未 compact」的旧行，会偏高 —— 我实测过一次删除后 <code>num_entities</code> 显示 865，真实只有 829。</p>
+<p>复核四项：</p>
+<ol>
+<li><code>chapter_name</code> 的有值率</li>
+<li>层级序列是否逐级递进、跨章时清空</li>
+<li>零碎片</li>
+<li>正文长度分布是否落在健康区间</li>
+</ol>
+<hr>
+<h2 id="_7">五、三个常见误判</h2>
+<p><strong>① 幂等键的取值和你以为的不一样。</strong>
+按错的名字去查会得到 0 条，看起来像「数据根本没进去」。查库之前先列一遍实际取值。</p>
+<p><strong>② 过滤阈值调太大。</strong>
+把 <code>MIN_CHUNK_BODY_CHARS</code> 提到 100 以上，会连正常的短小节一起丢掉。<strong>30~50 足够挡住纯标题碎片</strong>。</p>
+<p><strong>③ 只看切片数变少就以为变好了。</strong>
+片数减少可能是「碎片被丢掉」（好事），也可能是「大段被合并成一片」（要看情况）。<strong>必须同时看正文中位长度和碎片率</strong> —— 单看一个数字会被骗。</p>
+<hr>
+<h2 id="_8">小结</h2>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 诊断</td>
+<td>量出中位长度、碎片率、最长/最短 —— 别凭感觉</td>
+</tr>
+<tr>
+<td>2. 切分</td>
+<td>标题栈管层级 → 二次切分控大小 → <strong>先过滤再编号</strong></td>
+</tr>
+<tr>
+<td>3. 参数</td>
+<td>中文技术文 <code>chunk_size</code> 500~800，别沿用英文项目的 200</td>
+</tr>
+<tr>
+<td>4. 定稿</td>
+<td>库里数据少时就定死，改一次全库作废</td>
+</tr>
+<tr>
+<td>5. 校验</td>
+<td>用 <code>query</code> 分页计数（不是 <code>row_count</code>），查四项指标</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心一句</strong>：切片质量是<strong>量</strong>出来的，不是<strong>调</strong>出来的。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">一、先诊断：三个指标定位问题</a><ul>
+<li><a href="#_2">「纯标题碎片」是怎么来的</a></li>
+</ul>
+</li>
+<li><a href="#_3">二、三层切分：标题栈 → 二次切分 → 碎片过滤</a><ul>
+<li><a href="#1-chapter-parent">① 标题栈（维护层级，同时产出 chapter / parent）</a></li>
+<li><a href="#2">② 二次切分（控制块大小）</a></li>
+<li><a href="#3">③ 碎片过滤（顺序很重要：先过滤，再编号）</a></li>
+<li><a href="#_4">实测效果</a></li>
+</ul>
+</li>
+<li><a href="#_5">三、改参数 = 旧数据全部作废</a></li>
+<li><a href="#_6">四、落库后校验：区分「切分对」和「写对了」</a></li>
+<li><a href="#_7">五、三个常见误判</a></li>
+<li><a href="#_8">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

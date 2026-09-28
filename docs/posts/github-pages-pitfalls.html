@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用 GitHub Pages 搭博客，我踩的四个坑 · 甲乙的技术笔记</title>
+<meta name="description" content="从建仓库到自动发布，全程没用任何框架。踩到四件事：SSH 建不了仓库、凭据会被偷偷存下来、预构建的站点会被 Jekyll 搅乱、以及「返回 200」不等于「发布成功」。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>用 GitHub Pages 搭博客，我踩的四个坑</h1>
+  <div class="meta">
+    <time>2026-09-28</time>
+    <span class="sep">·</span>
+    <span class="reading">10 分钟读完</span>
+    <span class="tag">GitHub</span><span class="tag">Pages</span><span class="tag">CI</span><span class="tag">静态站点</span>
+  </div>
+  <div class="content"><p>这个博客从头到尾没用 Jekyll、Hexo、VitePress 任何框架 —— 一个 200 行的 Python 脚本把 Markdown 渲染成静态 HTML，推到 GitHub Pages。</p>
+<p>不复杂，但过程中踩了四个坑，每个都值得记一下。</p>
+<!--more-->
+
+<h2 id="ssh">坑一：SSH 能认证，但建不了仓库</h2>
+<p>第一反应是配好 SSH 之后一切畅通。<strong>其实不是。</strong></p>
+<div class="codehilite"><pre><span></span><code>SSH key        → 只能操作【已存在】的仓库
+API Token      → 才能创建新仓库
+网页登录        → 才能创建新仓库
+</code></pre></div>
+
+<p>而且容易误判的一点：仓库不存在时，<code>git ls-remote</code> 报的是 <strong>404</strong>，不是 403。</p>
+<div class="codehilite"><pre><span></span><code>$ git ls-remote git@gitee.com:user/repo.git
+Auth error: 404 not found!
+</code></pre></div>
+
+<p>看到 404 别以为是权限问题去改配置 —— <strong>先确认仓库到底存不存在</strong>。</p>
+<p>想全自动建仓库，用 token 调 API：</p>
+<div class="codehilite"><pre><span></span><code><span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span>
+    <span class="s2">"https://api.github.com/user/repos"</span><span class="p">,</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span>
+        <span class="s2">"name"</span><span class="p">:</span> <span class="s2">"repo-name"</span><span class="p">,</span>
+        <span class="s2">"description"</span><span class="p">:</span> <span class="s2">"..."</span><span class="p">,</span>
+        <span class="s2">"private"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"auto_init"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>      <span class="c1"># ★ 关键</span>
+    <span class="p">})</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span>
+    <span class="n">method</span><span class="o">=</span><span class="s2">"POST"</span><span class="p">,</span>
+    <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">"Authorization"</span><span class="p">:</span> <span class="s2">"token "</span> <span class="o">+</span> <span class="n">tok</span><span class="p">,</span>
+             <span class="s2">"Accept"</span><span class="p">:</span> <span class="s2">"application/vnd.github+json"</span><span class="p">,</span>
+             <span class="s2">"Content-Type"</span><span class="p">:</span> <span class="s2">"application/json"</span><span class="p">},</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<p><strong><code>auto_init: False</code> 这个别漏。</strong> 如果让 GitHub 初始化（生成 README），远程会多一个 commit，你本地 push 时就得先合并 —— 对「我要推已有内容」的场景纯属添乱。</p>
+<p>另外：经典 token 里，加 SSH 公钥需要 <strong><code>admin:public_key</code></strong> 权限，<code>repo</code> 不够。</p>
+<p><strong>权限不足时 GitHub 返回的是 404 而不是 403</strong>（故意隐藏资源是否存在）。我第一次差点以为是接口路径写错了，最后是靠读响应头 <code>X-OAuth-Scopes</code> 才定位到。</p>
+<hr>
+<h2 id="_1">坑二：凭据会被偷偷留下来</h2>
+<p>我原本以为命令行指定一次性凭据就够了：</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>-c<span class="w"> </span>credential.helper<span class="o">=</span><span class="s1">'!f() { echo username=xxx; echo "password=$TOK"; }; f'</span><span class="w"> </span>push
+</code></pre></div>
+
+<p><strong>但 push 成功之后，Windows 凭据管理器里还是多了一条：</strong></p>
+<div class="codehilite"><pre><span></span><code>目标: LegacyGeneric:target=git:https://github.com
+用户: xxx
+</code></pre></div>
+
+<p>原因：<strong>git 在 push 成功后会调用整条 helper 链的 <code>store</code> 动作</strong>。命令行 <code>-c</code> 的优先级虽然高，但<strong>没法移除系统级的 <code>manager</code></strong> —— Git Credential Manager 是系统配置里的，它照存不误。</p>
+<p>所以<strong>只检查配置文件是查不出来的</strong>。</p>
+<p>推送后必须清理并验证：</p>
+<div class="codehilite"><pre><span></span><code>cmdkey<span class="w"> </span>/delete:LegacyGeneric:target<span class="o">=</span>git:https://github.com
+
+<span class="c1"># 核验（⚠️ cmdkey 输出是 GBK + 含 null 字节，直接 grep 会被判定成二进制）</span>
+cmdkey<span class="w"> </span>/list<span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">'\000'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-a<span class="w"> </span>-i<span class="w"> </span>github
+</code></pre></div>
+
+<p><strong>完整核验清单</strong>：</p>
+<ul>
+<li>[ ] 仓库 <code>.git/config</code> 的 remote url 不含 token</li>
+<li>[ ] <code>grep -rq "ghp_" .git/</code> 无残留</li>
+<li>[ ] 无 <code>~/.git-credentials</code></li>
+<li>[ ] <code>git config --global --list</code> 无 token 项</li>
+<li>[ ] <strong><code>cmdkey /list</code> 无 <code>git:https://&lt;host&gt;</code> 条目</strong> ← 最容易漏</li>
+</ul>
+<p>最后别忘了去平台<strong>撤销那个 token</strong> —— 它已经离开你的机器了。</p>
+<p><strong>长期方案还是 SSH</strong>：配一次，之后推送不涉及任何凭据交换。</p>
+<hr>
+<h2 id="jekyll">坑三：预构建的站点会被 Jekyll 搅乱</h2>
+<p>这个坑最隐蔽。我把构建产物放在 <code>docs/</code>，Pages 的 Source 设为 <code>main / docs</code>。</p>
+<p>部署完打开站点：</p>
+<ul>
+<li>首页 <strong>HTTP 200</strong> —— 看起来正常</li>
+<li>但 <code>&lt;title&gt;</code> 是 <code>某某 | 某某</code>（这不是我写的标题格式）</li>
+<li>首页渲染的是<strong>仓库根目录的 README</strong>，不是我的 <code>index.html</code></li>
+<li><code>/posts/*.html</code> 全部 <strong>404</strong></li>
+<li>只有 <code>/static/style.css</code> 是 200 —— 因为根目录恰好也有那个文件</li>
+</ul>
+<p><strong>根因</strong>：<strong>GitHub Pages 默认对发布目录跑 Jekyll。</strong> Jekyll 会忽略下划线开头的文件、把 README 当首页候选，并且不按原样处理你的预构建产物。</p>
+<p><strong>解法：在发布目录放一个空的 <code>.nojekyll</code> 文件。</strong></p>
+<div class="codehilite"><pre><span></span><code>touch<span class="w"> </span>docs/.nojekyll
+</code></pre></div>
+
+<p>（我把它写进了构建脚本，每次构建自动生成。）</p>
+<h3 id="_2">这个坑真正的教训</h3>
+<p><strong>「返回 HTTP 200」不等于「发布成功」。</strong></p>
+<p>首页确实返回 200，只是内容完全是错的。如果我只查状态码就宣布完成，这个 bug 会一直挂在那儿。</p>
+<p><strong>该验什么</strong>：</p>
+<ul>
+<li><code>&lt;title&gt;</code> 的内容对不对</li>
+<li>子路径资源的状态码（不只是首页）</li>
+<li>页面里有没有不该出现的占位符残留</li>
+</ul>
+<hr>
+<h2 id="docs">坑四：<code>docs/</code> 是预构建的，那网页上传文章就不生效</h2>
+<p>这个坑不是技术问题，是<strong>架构问题</strong>。</p>
+<p>因为 Pages 发布的是<strong>已经构建好的</strong> <code>docs/</code>，而 <code>docs/</code> 是本地跑脚本生成的 —— 所以在 GitHub 网页上传一个 <code>posts/xxx.md</code>，<strong>站点不会有任何反应</strong>。</p>
+<p>我一度以为这是「两个仓库不互通」，其实是我漏了一个环节。</p>
+<p><strong>补上 GitHub Actions 就好。</strong> <code>.github/workflows/build.yml</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Build blog</span>
+
+<span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">main</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">paths</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"posts/**"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"templates/**"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"static/**"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"build.py"</span>
+<span class="w">  </span><span class="nt">workflow_dispatch</span><span class="p">:</span><span class="w">          </span><span class="c1"># 也支持手动触发</span>
+
+<span class="nt">permissions</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">write</span><span class="w">             </span><span class="c1"># ★ 要写权限才能把产物提交回仓库</span>
+
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="s">"3.12"</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install markdown pygments</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python build.py</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">提交构建产物</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">git config user.name  "github-actions[bot]"</span>
+<span class="w">          </span><span class="no">git config user.email "github-actions[bot]@users.noreply.github.com"</span>
+<span class="w">          </span><span class="no">git add docs</span>
+<span class="w">          </span><span class="no">if git diff --staged --quiet; then</span>
+<span class="w">            </span><span class="no">echo "docs/ 没有变化，跳过提交"</span>
+<span class="w">          </span><span class="no">else</span>
+<span class="w">            </span><span class="no">git commit -m "chore: rebuild docs [skip ci]"</span>
+<span class="w">            </span><span class="no">git push</span>
+<span class="w">          </span><span class="no">fi</span>
+</code></pre></div>
+
+<p><strong>三个设计要点</strong>：</p>
+<ol>
+<li><strong><code>permissions: contents: write</code></strong> —— 少了它，action 没法把产物推回来</li>
+<li><strong><code>paths</code> 过滤里不含 <code>docs/</code></strong> —— 否则「产物提交」会再次触发构建，无限循环</li>
+<li><strong>commit message 带 <code>[skip ci]</code></strong> —— 双保险</li>
+</ol>
+<p>另外：<strong>推送 workflow 文件时，用 SSH 不需要额外权限</strong>；如果用 HTTPS + token，GitHub 会要求 token 带 <code>workflow</code> scope（<code>repo</code> 不够）。</p>
+<h3 id="_3">验证方式</h3>
+<p>改一篇文章推上去，然后<strong>看远程是不是自己多了一个提交</strong>：</p>
+<div class="codehilite"><pre><span></span><code>你推送 5ad1dfb
+  → 20 秒后远程出现 7d4cfae「chore: rebuild docs [skip ci]」   ← Actions 干的
+  → 线上页面已包含新内容  ✓
+</code></pre></div>
+
+<p>我把这个当成了验收标准 —— <strong>光看 workflow 文件在不在，不算数。</strong></p>
+<hr>
+<h2 id="_4">现在的架构</h2>
+<div class="codehilite"><pre><span></span><code>blog/
+├── posts/            文章源（Markdown）
+├── templates/        模板
+├── static/           样式
+├── build.py          构建脚本（约 200 行）
+├── docs/             构建产物 ← Pages 发布这个
+│   └── .nojekyll     ★ 跳过 Jekyll
+└── .github/workflows/build.yml
+</code></pre></div>
+
+<p><strong>为什么不用现成的框架？</strong></p>
+<p>内容只有 Markdown 一种，读者只关心能不能打开、读起来舒不舒服。引入一套前端框架意味着依赖会过期、构建会变慢、某天要为升级折腾半天。</p>
+<p>现在只有两个依赖（<code>markdown</code> + <code>pygments</code>），渲染逻辑在一个文件里，随时能自己改。</p>
+<hr>
+<h2 id="_5">小结</h2>
+<table>
+<thead>
+<tr>
+<th>坑</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SSH 建不了仓库</td>
+<td>建仓库要 token 或网页；<code>ls-remote</code> 报 404 说明仓库不存在</td>
+</tr>
+<tr>
+<td>凭据被偷偷留下</td>
+<td>GCM 会调 <code>store</code>，只查配置发现不了 → 必须查 <code>cmdkey</code></td>
+</tr>
+<tr>
+<td>Jekyll 搅乱预构建站点</td>
+<td>放 <code>.nojekyll</code>；<strong>200 不等于发布成功</strong></td>
+</tr>
+<tr>
+<td>网页上传文章不生效</td>
+<td>缺构建环节 → 加 Actions（含 <code>contents: write</code>）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>最想强调的一条</strong>：这个过程中我有两次差点「宣布完成」——
+一次是只看 HTTP 200，一次是只看 workflow 文件存在。</p>
+<p><strong>验收标准要定在结果上，不能定在「动作执行了」上。</strong></p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#ssh">坑一：SSH 能认证，但建不了仓库</a></li>
+<li><a href="#_1">坑二：凭据会被偷偷留下来</a></li>
+<li><a href="#jekyll">坑三：预构建的站点会被 Jekyll 搅乱</a><ul>
+<li><a href="#_2">这个坑真正的教训</a></li>
+</ul>
+</li>
+<li><a href="#docs">坑四：docs/ 是预构建的，那网页上传文章就不生效</a><ul>
+<li><a href="#_3">验证方式</a></li>
+</ul>
+</li>
+<li><a href="#_4">现在的架构</a></li>
+<li><a href="#_5">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

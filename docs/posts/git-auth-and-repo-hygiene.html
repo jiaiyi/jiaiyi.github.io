@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git push 报认证失败，但代码可能早就推上去了 · 甲乙的技术笔记</title>
+<meta name="description" content="看到 Authentication failed 就急着换令牌、改配置，是常见的第一步错。先花 10 秒确认远端到底指向哪个 commit，能省掉一大圈无效折腾。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>git push 报认证失败，但代码可能早就推上去了</h1>
+  <div class="meta">
+    <time>2026-09-28</time>
+    <span class="sep">·</span>
+    <span class="reading">11 分钟读完</span>
+    <span class="tag">Git</span><span class="tag">凭据管理</span><span class="tag">仓库卫生</span>
+  </div>
+  <div class="content"><p><code>git push</code> 报错的时候，第一反应通常是「凭据坏了」—— 然后去重新生成令牌、清配置、换 remote。</p>
+<p>但有个更该先做的事：<strong>确认到底推上去了没有。</strong></p>
+<!--more-->
+
+<h2 id="_1">一、先看事实，别急着改配置</h2>
+<p>认证报错<strong>不一定</strong>代表没推成功 —— 可能只是某一次尝试失败，而之前的提交其实上去了。</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>status<span class="w"> </span>-sb<span class="w">                              </span><span class="c1"># 有没有 [ahead N]</span>
+git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>origin/master..HEAD<span class="w">       </span><span class="c1"># 本地领先远程几个提交</span>
+git<span class="w"> </span>ls-remote<span class="w"> </span>origin<span class="w"> </span>-h<span class="w"> </span>refs/heads/master<span class="w">   </span><span class="c1"># 读远端真实指向（公开仓库匿名可读）</span>
+git<span class="w"> </span>reflog<span class="w"> </span>--all<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w">                     </span><span class="c1"># 找 "update by push" 记录</span>
+</code></pre></div>
+
+<p>如果 <code>git ls-remote</code> 显示的远端 commit 和你本地某个历史提交对得上，说明<strong>之前已经推成功过</strong>，只是后续提交没上去。</p>
+<p>这种情况下继续折腾凭据是白费功夫 —— 问题在别处。</p>
+<hr>
+<h2 id="https">二、HTTPS 路径：令牌失效必须手动删凭据</h2>
+<h3 id="_2">重新生成令牌没用，这是个反直觉的点</h3>
+<p>GCM（Git Credential Manager）报这个的时候：</p>
+<div class="codehilite"><pre><span></span><code>Incorrect credentials: 401 Unauthorized, Please remove invalid credentials manually
+</code></pre></div>
+
+<p>它是在明确告诉你：<strong>它每次都从凭据管理器读旧凭据去试</strong>。所以你去平台重新生成一个令牌，<strong>不会自动生效</strong> —— 旧的还躺在那儿。</p>
+<p>必须手动删：</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 列出本机 git 相关凭据</span>
+cmdkey<span class="w"> </span>/list<span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">'\000'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-a<span class="w"> </span>-i<span class="w"> </span><span class="s2">"gitee"</span>
+
+<span class="c1"># 删除（注意 target 要带 LegacyGeneric:target= 前缀）</span>
+cmdkey<span class="w"> </span>/delete:LegacyGeneric:target<span class="o">=</span>git:https://gitee.com
+</code></pre></div>
+
+<p>也可以走 GUI：控制面板 → 用户账户 → 凭据管理器 → Windows 凭据 → 删除 <code>git:https://&lt;host&gt;</code>。</p>
+<blockquote>
+<p>那个 <code>tr -d '\000'</code> 不是装饰 —— <code>cmdkey</code> 的输出带 null 字节且是 GBK 编码，直接 <code>grep</code> 会被判定为二进制文件、什么都看不到。</p>
+</blockquote>
+<h3 id="_3">重新认证的要点</h3>
+<ul>
+<li><strong>Gitee / GitHub 早已不支持账号密码推代码，必须用 Personal Access Token</strong>（Gitee 需要勾 <code>projects</code> 权限）</li>
+<li>删掉旧凭据后，下次 <code>git push</code> 会重新弹窗</li>
+<li>排查时用 <code>GIT_TERMINAL_PROMPT=0</code> 让它<strong>快速失败而不是卡在交互提示上</strong>：</li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="nv">GIT_TERMINAL_PROMPT</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>timeout<span class="w"> </span><span class="m">90</span><span class="w"> </span>git<span class="w"> </span>push<span class="w"> </span>--progress<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15
+</code></pre></div>
+
+<hr>
+<h2 id="ssh">三、切到 SSH（推荐，一次配好长期免密）</h2>
+<p>这是最省心的方案 —— 配好之后 HTTPS 那堆令牌问题<strong>彻底绕开</strong>。</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 1. 生成密钥（没有才生成；-N "" 表示不设密码短语）</span>
+ls<span class="w"> </span>~/.ssh/id_ed25519.pub<span class="w"> </span><span class="o">||</span><span class="w"> </span>ssh-keygen<span class="w"> </span>-t<span class="w"> </span>ed25519<span class="w"> </span>-f<span class="w"> </span>~/.ssh/id_ed25519<span class="w"> </span>-N<span class="w"> </span><span class="s2">""</span><span class="w"> </span>-C<span class="w"> </span><span class="s2">"&lt;你的邮箱&gt;"</span>
+cat<span class="w"> </span>~/.ssh/id_ed25519.pub<span class="w">      </span><span class="c1"># 复制这一整行</span>
+
+<span class="c1"># 2. 把公钥粘到平台的 SSH 公钥设置页（必须登录网页操作）</span>
+
+<span class="c1"># 3. 验证 + 切换 remote + 推送</span>
+ssh<span class="w"> </span>-o<span class="w"> </span><span class="nv">BatchMode</span><span class="o">=</span>yes<span class="w"> </span>-o<span class="w"> </span><span class="nv">StrictHostKeyChecking</span><span class="o">=</span>accept-new<span class="w"> </span>-T<span class="w"> </span>git@gitee.com
+git<span class="w"> </span>remote<span class="w"> </span>set-url<span class="w"> </span>origin<span class="w"> </span>git@gitee.com:&lt;用户名&gt;/&lt;仓库&gt;.git
+git<span class="w"> </span>push
+</code></pre></div>
+
+<p>成功的样子：</p>
+<div class="codehilite"><pre><span></span><code>Hi &lt;用户名&gt;! You've successfully authenticated, but GITEE.COM does not provide shell access.
+</code></pre></div>
+
+<p><strong>关键判断</strong>：<code>ssh -T</code> 返回 <code>Permission denied (publickey)</code>，意思是<strong>公钥还没加到平台</strong>，不是本地配置有问题。别去折腾 ssh config。</p>
+<p>排查时避免交互卡住：</p>
+<div class="codehilite"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">GIT_SSH_COMMAND</span><span class="o">=</span><span class="s2">"ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"</span>
+</code></pre></div>
+
+<hr>
+<h2 id="git">四、<code>.git</code> 体积异常：误提交大文件之后</h2>
+<p>典型场景：某次 <code>git add -A</code> 把一个 torch wheel 加了进去，后来文件删了 —— 但<strong>对象仍然以「不可达」状态占着磁盘</strong>。</p>
+<h3 id="_4">定位</h3>
+<div class="codehilite"><pre><span></span><code>du<span class="w"> </span>-sh<span class="w"> </span>.git
+git<span class="w"> </span>count-objects<span class="w"> </span>-vH<span class="w">      </span><span class="c1"># 看 size（散落对象总大小）与 size-pack</span>
+</code></pre></div>
+
+<p>如果 <code>size</code> 有几 GB，但 <code>rev-list --objects --all</code> 里最大的对象只有几百 KB —— 说明垃圾全在<strong>不可达对象</strong>里。</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 找体积异常的散落对象</span>
+find<span class="w"> </span>.git/objects<span class="w"> </span>-type<span class="w"> </span>f<span class="w"> </span>-size<span class="w"> </span>+1048576c<span class="w"> </span>-printf<span class="w"> </span><span class="s1">'%s %p\n'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sort<span class="w"> </span>-rn<span class="w"> </span><span class="p">|</span><span class="w"> </span>head
+
+<span class="c1"># 判断它是什么（看文件头魔数即可，不必读完）</span>
+git<span class="w"> </span>cat-file<span class="w"> </span>blob<span class="w"> </span>&lt;sha&gt;<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-c<span class="w"> </span><span class="m">120</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cat<span class="w"> </span>-v
+</code></pre></div>
+
+<p>常见魔数：<code>PK\x03\x04</code> = ZIP（wheel / 压缩包）、<code>\x89PNG</code> = PNG、<code>\x7fELF</code> = ELF。</p>
+<h3 id="_5">回收</h3>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>fsck<span class="w"> </span>--no-progress<span class="w">     </span><span class="c1"># 先确认哪些是 unreachable</span>
+git<span class="w"> </span>gc<span class="w"> </span>--prune<span class="o">=</span>now<span class="w">         </span><span class="c1"># 立即回收，无宽限期</span>
+</code></pre></div>
+
+<p>核对：</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>count-objects<span class="w"> </span>-vH<span class="w">      </span><span class="c1"># count 应为 0</span>
+git<span class="w"> </span>fsck<span class="w"> </span>--no-progress<span class="w">     </span><span class="c1"># 无输出 = 仓库健康</span>
+git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>-5<span class="w">       </span><span class="c1"># 历史完整</span>
+</code></pre></div>
+
+<blockquote>
+<p>⚠️ <code>--prune=now</code> 会<strong>立即</strong>删除不可达对象，没有宽限期。执行前务必用 <code>find</code> / <code>cat-file</code> 确认那些确实是垃圾。历史提交里的对象不受影响。</p>
+</blockquote>
+<hr>
+<h2 id="gitignore">五、<code>.gitignore</code> 的两个大坑</h2>
+<h3 id="1-git-add-gitignore">坑 1：已经 <code>git add</code> 过的文件，<code>.gitignore</code> 管不了</h3>
+<p><strong>这是最容易踩的一脚。</strong> <code>.gitignore</code> <strong>只对未跟踪的文件生效</strong>。</p>
+<p>如果有一次手滑 <code>git add .</code>，<code>.env</code>、<code>node_modules</code> 已经进了暂存区，你写多少条忽略规则都没用。</p>
+<p>先判断现状：</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>ls-files<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"\.env</span>$<span class="s2">|node_modules/|__pycache__|\.idea/"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>head
+git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>-1<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w">      </span><span class="c1"># 有没有提交历史 → 决定用哪种修法</span>
+</code></pre></div>
+
+<p><strong>情况 A：还没有任何 commit</strong>（最干净）</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>rm<span class="w"> </span>-r<span class="w"> </span>--cached<span class="w"> </span>.<span class="w">        </span><span class="c1"># 只清索引，工作区文件一个都不动</span>
+git<span class="w"> </span>add<span class="w"> </span>.<span class="w">                   </span><span class="c1"># 按新的 .gitignore 重新暂存</span>
+git<span class="w"> </span>ls-files<span class="w"> </span><span class="p">|</span><span class="w"> </span>wc<span class="w"> </span>-l<span class="w">        </span><span class="c1"># 对比前后数量（我实测过 785 → 37）</span>
+</code></pre></div>
+
+<blockquote>
+<p><code>--cached</code> 是关键。<strong>不传它就会真的删掉工作区文件。</strong></p>
+</blockquote>
+<p><strong>情况 B：文件已经进过历史</strong></p>
+<p>先清索引止血，再决定要不要清洗历史：</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>rm<span class="w"> </span>-r<span class="w"> </span>--cached<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>.
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"chore: 移除误提交的产物与密钥"</span>
+</code></pre></div>
+
+<blockquote>
+<p>⚠️ <strong>密钥一旦进过历史，就等于已经泄露。</strong> 删文件不够 —— <strong>必须去平台吊销并重新生成</strong>
+（LLM API Key、云厂商 AK/SK、数据库密码都算）。</p>
+</blockquote>
+<h3 id="2">坑 2：靠肉眼看文件列表判断规则是否生效</h3>
+<p>正则很容易误判。比如 <code>grep -E "\.env"</code> 会把 <code>.env.example</code> 一起算进去，看起来像「还有 .env 没排除」，其实那是模板文件、本来就该提交。</p>
+<p>让 git 自己告诉你哪条规则生效：</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>check-ignore<span class="w"> </span>-v<span class="w"> </span>customer-service-backend/.env
+<span class="c1"># 输出：.gitignore:7:.env    customer-service-backend/.env</span>
+<span class="c1">#        ↑ 哪个文件 : 第几行 : 具体规则</span>
+</code></pre></div>
+
+<p>逐条核对必查项：</p>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>ls-files<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"\.env</span>$<span class="s2">"</span><span class="w">             </span><span class="c1"># 期望【为空】</span>
+git<span class="w"> </span>ls-files<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"\.env\.example</span>$<span class="s2">"</span><span class="w">    </span><span class="c1"># 期望【保留】—— 模板要提交</span>
+git<span class="w"> </span>ls-files<span class="w"> </span><span class="p">|</span><span class="w"> </span>wc<span class="w"> </span>-l<span class="w">                        </span><span class="c1"># 数量应大幅下降</span>
+</code></pre></div>
+
+<h3 id="gitignore_1"><code>.gitignore</code> 该覆盖什么</h3>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>典型条目</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>密钥 / 环境变量（最高优先）</strong></td>
+<td><code>.env</code>、<code>.env.*</code>，并用 <code>!.env.example</code> 把模板救回来</td>
+</tr>
+<tr>
+<td>Python</td>
+<td><code>__pycache__/</code>、<code>*.py[cod]</code>、<code>.venv/</code>、<code>*.egg-info/</code>、<code>.pytest_cache/</code></td>
+</tr>
+<tr>
+<td>Node</td>
+<td><code>node_modules/</code>、<code>dist/</code>、<code>.vite/</code>、<code>*.local</code></td>
+</tr>
+<tr>
+<td>IDE</td>
+<td><code>.idea/</code>、<code>.vscode/</code>、<code>*.iml</code></td>
+</tr>
+<tr>
+<td>系统</td>
+<td><code>.DS_Store</code>、<code>Thumbs.db</code>、<code>desktop.ini</code></td>
+</tr>
+<tr>
+<td>日志 / 临时</td>
+<td><code>*.log</code>、<code>logs/</code>、<code>tmp/</code>、<code>*.bak</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>⚠️ 反向提醒</strong>：<code>uv.lock</code> / <code>package-lock.json</code> / <code>poetry.lock</code> 属于<strong>必须提交</strong>的。
+它们的职责就是锁依赖版本，别顺手加进忽略列表 —— 这是很常见的误伤。</p>
+<h3 id="_6">提交前做一次体积预演</h3>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>add<span class="w"> </span>-A<span class="w"> </span>--dry-run
+git<span class="w"> </span>diff<span class="w"> </span>--cached<span class="w"> </span>--numstat<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">'{print $3}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="k">while</span><span class="w"> </span><span class="nb">read</span><span class="w"> </span>-r<span class="w"> </span>f<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">  </span><span class="o">[</span><span class="w"> </span>-f<span class="w"> </span><span class="s2">"</span><span class="nv">$f</span><span class="s2">"</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nv">s</span><span class="o">=</span><span class="k">$(</span>stat<span class="w"> </span>-c<span class="w"> </span>%s<span class="w"> </span><span class="s2">"</span><span class="nv">$f</span><span class="s2">"</span><span class="k">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">"</span><span class="nv">$s</span><span class="s2">"</span><span class="w"> </span>-gt<span class="w"> </span><span class="m">1048576</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"⚠ </span><span class="nv">$f</span><span class="s2"> (</span><span class="k">$((</span><span class="nv">s</span><span class="o">/</span><span class="m">1024</span><span class="k">))</span><span class="s2">KB)"</span>
+<span class="k">done</span>
+</code></pre></div>
+
+<hr>
+<h2 id="_7">附：换行符警告是正常的</h2>
+<p>Windows 上 <code>git add</code> 出现这个不用管：</p>
+<div class="codehilite"><pre><span></span><code>warning: LF will be replaced by CRLF
+</code></pre></div>
+
+<p>想统一，加个 <code>.gitattributes</code>：</p>
+<div class="codehilite"><pre><span></span><code>* text=auto eol=lf
+*.bat text eol=crlf
+</code></pre></div>
+
+<hr>
+<h2 id="_8">小结</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>先做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Authentication failed</code></td>
+<td>先 <code>git ls-remote</code> 确认远端指向，可能早就推成功了</td>
+</tr>
+<tr>
+<td><code>Please remove invalid credentials manually</code></td>
+<td>删凭据管理器里的旧条目，重新生成令牌没用</td>
+</tr>
+<tr>
+<td><code>Permission denied (publickey)</code></td>
+<td>公钥没加到平台，不是本地问题</td>
+</tr>
+<tr>
+<td><code>.git</code> 几百 MB 但内容很少</td>
+<td>误提交的大文件成了不可达对象，<code>gc --prune=now</code></td>
+</tr>
+<tr>
+<td><code>.gitignore</code> 写了不生效</td>
+<td>文件已被跟踪，<code>git rm -r --cached .</code> 重建索引</td>
+</tr>
+<tr>
+<td>不确定哪条规则生效</td>
+<td><code>git check-ignore -v &lt;文件&gt;</code></td>
+</tr>
+</tbody>
+</table></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">一、先看事实，别急着改配置</a></li>
+<li><a href="#https">二、HTTPS 路径：令牌失效必须手动删凭据</a><ul>
+<li><a href="#_2">重新生成令牌没用，这是个反直觉的点</a></li>
+<li><a href="#_3">重新认证的要点</a></li>
+</ul>
+</li>
+<li><a href="#ssh">三、切到 SSH（推荐，一次配好长期免密）</a></li>
+<li><a href="#git">四、.git 体积异常：误提交大文件之后</a><ul>
+<li><a href="#_4">定位</a></li>
+<li><a href="#_5">回收</a></li>
+</ul>
+</li>
+<li><a href="#gitignore">五、.gitignore 的两个大坑</a><ul>
+<li><a href="#1-git-add-gitignore">坑 1：已经 git add 过的文件，.gitignore 管不了</a></li>
+<li><a href="#2">坑 2：靠肉眼看文件列表判断规则是否生效</a></li>
+<li><a href="#gitignore_1">.gitignore 该覆盖什么</a></li>
+<li><a href="#_6">提交前做一次体积预演</a></li>
+</ul>
+</li>
+<li><a href="#_7">附：换行符警告是正常的</a></li>
+<li><a href="#_8">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

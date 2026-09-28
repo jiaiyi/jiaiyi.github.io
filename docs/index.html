@@ -52,6 +52,145 @@
 <section class="post-list">
 <article class="card">
   <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">RAG</span><span class="tag">检索</span><span class="tag">路由</span><span class="tag">LLM</span></span>
+  </div>
+  <h2><a href="posts/rag-retrieval-routing.html">RAG 检索路由：为什么「精确问课程名」反而答错</a></h2>
+  <div class="card-summary"><p>一个反直觉的实测结果，先说结论：</p>
+<table>
+<thead>
+<tr>
+<th>问法</th>
+<th>top1 分数</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「有没有讲 Galois 理论的课」</td>
+<td>0.7529</td>
+<td>✅ 命中</td>
+</tr>
+<tr>
+<td>「有哪些 Python 相关课程」</td>
+<td>0.6427</td>
+<td>❌ 0.63~0.64 平坦分布</td>
+</tr>
+<tr>
+<td>「<strong>X 入门班的章节结构是什么</strong>」</td>
+<td><strong>0.7978</strong></td>
+<td>❌ <strong>完全错的课</strong></td>
+</tr>
+</tbody>
+</table>
+<p>注意第三行：<strong>用户已经明确说出对象名了，向量却给出了另一门课，分数还有 0.79。</strong></p>
+<p>这是把「按名查」「列列表」「推荐」「文档问答」全都塞进同一条向量链路时会遇到的典型问题 —— 前几类<strong>本质是结构化查询，不是语义相似度问题</strong>。</p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">RAG</span><span class="tag">检索</span><span class="tag">中文处理</span><span class="tag">向量数据库</span></span>
+  </div>
+  <h2><a href="posts/rag-chunking-tuning.html">RAG 切片调优：先诊断，别先调参</a></h2>
+  <div class="card-summary"><p>RAG 效果不好时，最想去调的就是 <code>chunk_size</code>。但<strong>切片质量问题只有看真实数据才暴露</strong> —— 凭感觉把小改大、大改小，来回试几轮也很难收敛。</p>
+<p>正确顺序是：<strong>先量，再改，然后验证。</strong></p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">PyCharm</span><span class="tag">uv</span><span class="tag">Python</span><span class="tag">环境配置</span></span>
+  </div>
+  <h2><a href="posts/pycharm-uv-interpreter.html">PyCharm 里解释器加不进去？问题可能不在解释器</a></h2>
+  <div class="card-summary"><p>给一个 uv 管理的项目配 PyCharm 解释器，你可能会遇到连串怪事：</p>
+<ul>
+<li>运行配置的解释器下拉里<strong>只有别的项目的环境</strong>，本项目的 <code>.venv</code> 不在列表里</li>
+<li>添加解释器时报「<strong>不是有效 Python</strong>」</li>
+<li>更诡异的是：添加后<strong>面板里依然不显示</strong>，但日志里能看到 SDK 明明建出来了</li>
+</ul>
+<p>这三种症状看起来都在「解释器」上，实际根因往往在<strong>别处</strong>。按下面顺序查，比盲目试要快得多。</p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">Hermes</span><span class="tag">插件系统</span><span class="tag">工具链</span></span>
+  </div>
+  <h2><a href="posts/hermes-plugin-ecosystem.html">Hermes 的五套「插件」根本不是一回事</a></h2>
+  <div class="card-summary"><p>在 Hermes 里折腾插件，最容易遇到的困惑是：</p>
+<p><strong>「我明明装上了，为什么没生效？」</strong></p>
+<p>原因通常是：Hermes 的「插件」<strong>不是一个东西，而是五套互不相干的扩展机制</strong>。混为一谈就会一直在错的开关上打转。</p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">GitHub</span><span class="tag">Pages</span><span class="tag">CI</span><span class="tag">静态站点</span></span>
+  </div>
+  <h2><a href="posts/github-pages-pitfalls.html">用 GitHub Pages 搭博客，我踩的四个坑</a></h2>
+  <div class="card-summary"><p>这个博客从头到尾没用 Jekyll、Hexo、VitePress 任何框架 —— 一个 200 行的 Python 脚本把 Markdown 渲染成静态 HTML，推到 GitHub Pages。</p>
+<p>不复杂，但过程中踩了四个坑，每个都值得记一下。</p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">Git</span><span class="tag">网络排查</span><span class="tag">Windows</span><span class="tag">代理</span></span>
+  </div>
+  <h2><a href="posts/git-cannot-reach-github.html">Windows 上 git 连不上 GitHub，先别急着怪网络</a></h2>
+  <div class="card-summary"><p>浏览器能正常打开 GitHub，代理软件也在跑，但终端里 <code>git clone</code> 就是卡住然后超时：</p>
+<div class="codehilite"><pre><span></span><code>Failed to connect to github.com:443 after 21098 ms: Could not connect to server
+</code></pre></div>
+
+<p>或者：</p>
+<div class="codehilite"><pre><span></span><code>fatal: unable to access 'https://github.com/...': CONNECT tunnel failed, response 502
+</code></pre></div>
+
+<p>这两个报错看起来都像网络问题，其实根因完全不同。先分清是哪一个，能省一半时间。</p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">Git</span><span class="tag">凭据管理</span><span class="tag">仓库卫生</span></span>
+  </div>
+  <h2><a href="posts/git-auth-and-repo-hygiene.html">git push 报认证失败，但代码可能早就推上去了</a></h2>
+  <div class="card-summary"><p><code>git push</code> 报错的时候，第一反应通常是「凭据坏了」—— 然后去重新生成令牌、清配置、换 remote。</p>
+<p>但有个更该先做的事：<strong>确认到底推上去了没有。</strong></p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">前端</span><span class="tag">测试</span><span class="tag">Chrome</span><span class="tag">调试</span></span>
+  </div>
+  <h2><a href="posts/frontend-verification-without-framework.html">验证前端不一定要装浏览器自动化框架</a></h2>
+  <div class="card-summary"><p>要验证一个前端页面到底渲染成什么样，第一反应通常是装 Playwright / Puppeteer。</p>
+<p>但它们都要下载一个 Chromium（约 196MB）。在企业网络或受限环境里，这一步经常失败 —— 我实测过：工具本体装得上，但 Chromium 从 Google 的存储服务下载<strong>三次重试全部超时</strong>。</p>
+<p><strong>别卡在这里反复重试。</strong> 系统上通常已经装了 Chrome 或 Edge，直接用就够。</p>
+<p>下面四招按「由轻到重」排列。<strong>前两招完全不启动浏览器</strong>，却能覆盖大部分实际问题。</p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
+    <time>2026-09-28</time>
+    <span class="tags"><span class="tag">Electron</span><span class="tag">Windows</span><span class="tag">调试</span></span>
+  </div>
+  <h2><a href="posts/electron-launch-verify.html">打包好的 Electron 应用「启动即崩」？先查环境变量</a></h2>
+  <div class="card-summary"><p>一个打包好的 Electron 应用，交给 AI 编程助手去启动，经常「看起来是坏的」：</p>
+<ul>
+<li>进程<strong>秒退</strong></li>
+<li><strong>exit code 0</strong>（成功？）</li>
+<li>stdout / stderr <strong>完全空白</strong></li>
+<li><strong>不生成任何应用日志</strong> —— 你以为会写的那个 log 文件根本不创建</li>
+</ul>
+<p>看起来和「安装坏了」「exe 被截断」一模一样。</p>
+<p><strong>但大多数情况不是应用的问题，是启动环境的问题。</strong></p></div>
+</article>
+
+<article class="card">
+  <div class="card-meta">
     <time>2026-09-18</time>
     <span class="tags"><span class="tag">WSL</span><span class="tag">代理</span><span class="tag">Windows</span></span>
   </div>
