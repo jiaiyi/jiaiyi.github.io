@@ -1,17 +1,8 @@
----
-title: Milvus 报 code=1100？两类 schema 里看不出来的约束
-date: 2026-09-17
-tags: [Milvus, 向量数据库, Python]
-summary: 往 Milvus 插数据报 more fieldData has pass in / varchar field got nil，对着 schema 检查却找不出问题 —— 这两条约束不在定义里，只有真插一次才会炸出来。
----
-
 往 Milvus 插数据时遇到 `MilvusException (code=1100)`，第一反应通常是去翻 schema
 核对字段。但下面这两条约束**在 schema 定义里根本看不出来** —— 声明得完全合法，
 insert 的时候才报错。
 
 我在这上面来回折腾过，这里一次说清。
-
-<!--more-->
 
 ## 现象
 
@@ -145,3 +136,9 @@ row.pop("chunk_id", None)        # 这一行把原始对象的主键也删了
 
 两条都属于「不在 schema 里，插一次才知道」的类型。如果你正在写 Milvus 的写入层，
 建议一开始就把清洗函数收敛到单个入口，别等到踩了再回头重构。
+
+---
+
+> 原文地址：https://jiaiyi.github.io/posts/milvus-code-1100.html
+>
+> 更多同类文章见我的博客：https://jiaiyi.github.io

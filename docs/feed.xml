@@ -86,7 +86,7 @@
     <title>Milvus 报 code=1100？两类 schema 里看不出来的约束</title>
     <link>https://jiaiyi.github.io/posts/milvus-code-1100.html</link>
     <guid>https://jiaiyi.github.io/posts/milvus-code-1100.html</guid>
-    <description>往 Milvus 插数据报 more fieldData has pass in / varchar field got nil，对着 schema 反复检查却找不出问题。这两条约束不在 schema 定义里，只有真插一次才会炸出来。</description>
+    <description>往 Milvus 插数据报 more fieldData has pass in / varchar field got nil，对着 schema 检查却找不出问题 —— 这两条约束不在定义里，只有真插一次才会炸出来。</description>
   </item>
 </channel>
 </rss>
