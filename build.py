@@ -237,6 +237,7 @@ def build(site: dict) -> list[Post]:
   <p class="tagline">{html.escape(site["tagline"])}</p>
   <p class="desc">{html.escape(site["description"])}</p>
   <nav class="hero-links">
+    <a href="portfolio.html">作品集</a>
     <a href="{site["repo"]}">Skills 仓库</a>
     <a href="{site["github"]}">GitHub</a>
     <a href="feed.xml">RSS</a>
@@ -248,6 +249,18 @@ def build(site: dict) -> list[Post]:
 {about_html}""",
     )
     (OUT_DIR / "index.html").write_text(index_html, encoding="utf-8")
+
+    # ---- 作品集页（内容在 templates/portfolio.html，改内容不用动本文件）
+    portfolio_body = read("portfolio.html")
+    portfolio_html = _page(
+        base,
+        lang=site["lang"],
+        page_title=f"作品集 · {site['title']}",
+        description="三个 RAG 与 Agent 方向的项目：教育知识库、深度检索服务、Agent 能力实践。",
+        body_class="page-post",
+        content=portfolio_body,
+    )
+    (OUT_DIR / "portfolio.html").write_text(portfolio_html, encoding="utf-8")
 
     # ---- 文章页
     for p in posts:

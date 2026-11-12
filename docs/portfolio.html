@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>作品集 · 甲乙的技术笔记</title>
+<meta name="description" content="三个 RAG 与 Agent 方向的项目：教育知识库、深度检索服务、Agent 能力实践。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="/portfolio.html">作品集</a>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+    <article class="post">
+      <a class="back" href="index.html">← 返回博客</a>
+      <h1>作品集</h1>
+      <div class="meta">
+        <span>Python 后端 / RAG 检索 / Agent 编排</span>
+        <span class="sep">·</span>
+        <span>更新于 2026-11</span>
+      </div>
+
+      <div class="content">
+        <p>三个从零写完、能跑起来的项目，每个都附了架构说明和我踩过的坑。
+          技术栈集中在一条线上：<strong>文档进知识库 → 检索 → 交给 Agent 编排 → 输出结论</strong>。</p>
+      </div>
+
+      <section class="post-list">
+
+        <article class="card">
+          <div class="card-meta">
+            <span>项目一 · RAG 系统</span>
+            <span class="tags"><span class="tag">LangGraph</span><span class="tag">Milvus</span><span class="tag">FastAPI</span></span>
+          </div>
+          <h2><a href="https://gitee.com/chang-jiayi1/edu-rag">教育知识库 · 智能问答 RAG</a></h2>
+          <div class="card-summary">
+            <p>把 Word / PDF / Markdown 讲义和题库导入知识库，支持课程检索、课程详情、文档问答、
+              题库检索、闲聊五类对话，单端口同时提供 4 个 Web 页面。</p>
+            <p>约 1 万行 Python。导入与查询拆成两张 LangGraph 图（9 节点 / 10 节点）；
+              检索走 BGE-M3 稠密+稀疏混合检索 → RRF 融合 → BGE-Reranker 重排；
+              存储用 Milvus + MongoDB + MinIO。</p>
+            <p class="proj-links">
+              <a href="https://gitee.com/chang-jiayi1/edu-rag">代码</a>
+              <a href="posts/langgraph-two-graphs.html">拆图设计</a>
+              <a href="posts/fastapi-route-merge-methods.html">单端口合并踩坑</a>
+              <a href="posts/rag-retrieval-routing.html">检索路由</a>
+            </p>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-meta">
+            <span>项目二 · 多智能体</span>
+            <span class="tags"><span class="tag">deepagents</span><span class="tag">FastAPI</span><span class="tag">WebSocket</span></span>
+          </div>
+          <h2><a href="https://gitee.com/chang-jiayi1/deep-search">Deep Search · 深度检索服务</a></h2>
+          <div class="card-summary">
+            <p>把联网搜索、MySQL 查询、企业知识库三条检索链路分给三个子 Agent，
+              主 Agent 只负责拆解与汇总，最后产出一份带出处的 Markdown 报告并转 PDF。</p>
+            <p>按信息源拆子 Agent，避免一个 Agent 挂几十个工具导致选错工具；
+              每个会话独立目录隔离上传与产物；执行过程通过 WebSocket 实时推给前端。</p>
+            <p class="proj-links">
+              <a href="https://gitee.com/chang-jiayi1/deep-search">代码</a>
+              <a href="posts/agent-permission-boundaries.html">Agent 权限边界</a>
+            </p>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-meta">
+            <span>项目三 · Agent 工程</span>
+            <span class="tags"><span class="tag">deepagents</span><span class="tag">MCP</span><span class="tag">权限</span></span>
+          </div>
+          <h2>Deep Agent · 能力清单与旅行规划助手</h2>
+          <div class="card-summary">
+            <p>20 个可单独运行的最小示例，覆盖流式输出、子智能体（含嵌套）、人工审批（含改参数）、
+              存储后端、权限（全局只读 / 目录隔离）、技能与上下文。</p>
+            <p>综合案例是旅行规划助手：主 Agent 调度高德地图 MCP 与 12306 MCP 两个子 Agent，
+              最后由汇总 Agent 出行程与预算，产物落盘成 Markdown。</p>
+            <p class="proj-links">
+              <a href="posts/agent-permission-boundaries.html">权限设计</a>
+            </p>
+          </div>
+        </article>
+
+      </section>
+
+      <div class="content">
+        <h2>另外</h2>
+        <p>博客里 <a href="index.html">17 篇</a> 实践记录，都来自上面这些项目里真实踩过的坑：
+          现象、怎么定位、判断依据、验证数据，不抄文档。</p>
+        <p>联系方式：<a href="mailto:2938054263@qq.com">2938054263@qq.com</a></p>
+      </div>
+    </article>
+    <button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

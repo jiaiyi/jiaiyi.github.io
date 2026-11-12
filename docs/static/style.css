@@ -730,3 +730,29 @@ footer .sep { margin: 0 .5rem; color: var(--border-2); }
 
 [data-theme="dark"] .codehilite .gd { color: #ffdcd7; background: #67060c; }
 [data-theme="dark"] .codehilite .gi { color: #aff5b4; background: #033a16; }
+
+/* ---------------- 作品集：项目卡片的链接行 ---------------- */
+.proj-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem .9rem;
+  margin-top: .9rem;
+  font-size: .86rem;
+}
+
+.proj-links a {
+  display: inline-flex;
+  align-items: center;
+  padding: .25rem .6rem;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  color: var(--fg-2);
+  text-decoration: none;
+  transition: color .15s, border-color .15s, background .15s;
+}
+
+.proj-links a:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
