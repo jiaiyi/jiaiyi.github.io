@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FastAPI 合并子应用路由：去重键少写一个 methods，DELETE 就消失了 · 甲乙的技术笔记</title>
+<meta name="description" content="历史记录能正常读出，点「清空对话」却只弹一句提示，服务端连 500 都没有。根因是合并子应用路由时去重键只用了路径，同一路径上的 DELETE 被整条丢掉了。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>FastAPI 合并子应用路由：去重键少写一个 methods，DELETE 就消失了</h1>
+  <div class="meta">
+    <time>2026-11-12</time>
+    <span class="sep">·</span>
+    <span class="reading">6 分钟读完</span>
+    <span class="tag">FastAPI</span><span class="tag">Python</span><span class="tag">路由</span><span class="tag">后端</span>
+  </div>
+  <div class="content"><p>先说现象：一个把四个 Web 页面合并到同一端口上的 FastAPI 服务，「历史记录」列表能正常读出来，点「清空对话」却失败 —— 浏览器里只弹一句通用提示，<strong>服务端没有 500，日志干干净净</strong>。</p>
+<p>这种「前端说失败、后端说没事」的 bug，比抛异常难查十倍。</p>
+<!--more-->
+
+<h2 id="_1">一、先定位到「请求根本没进来」</h2>
+<p>排查顺序很关键。先别改代码，先确认一件事：<strong>那个请求到底有没有到达处理函数。</strong></p>
+<p>在路由函数第一行加一行日志：</p>
+<div class="codehilite"><pre><span></span><code><span class="nd">@router</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="s2">"/history/</span><span class="si">{session_id}</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">clear_history</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"clear_history hit: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">session_id</span><span class="p">)</span>
+    <span class="o">...</span>
+</code></pre></div>
+
+<p>结果这行日志<strong>一次都没打印</strong>。但同一个路径的 GET 是正常的：</p>
+<div class="codehilite"><pre><span></span><code><span class="nd">@router</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/history/</span><span class="si">{session_id}</span><span class="s2">"</span><span class="p">)</span>   <span class="c1"># 这个正常</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_history</span><span class="p">(</span><span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span> <span class="o">...</span>
+</code></pre></div>
+
+<p>也就是说：<strong>路径存在，处理函数存在，但 DELETE 这个方法在路由表里不存在。</strong></p>
+<p>浏览器看到的是一个标准的 <strong>405 Method Not Allowed</strong> —— 而前端只 catch 了 <code>res.ok === false</code>，统一弹了一句「操作失败」，把状态码吞掉了。这就是「服务端看起来没事」的原因。</p>
+<h2 id="_2">二、根因：合并路由时，去重键只用了一半</h2>
+<p>这个服务为了「单端口多页面」，把多个子应用的路由手动合并进主应用，代码大致是这样：</p>
+<div class="codehilite"><pre><span></span><code><span class="n">seen</span> <span class="o">=</span> <span class="p">{</span><span class="n">route</span><span class="o">.</span><span class="n">path</span> <span class="k">for</span> <span class="n">route</span> <span class="ow">in</span> <span class="n">target</span><span class="o">.</span><span class="n">routes</span><span class="p">}</span>
+<span class="k">for</span> <span class="n">sub_app</span> <span class="ow">in</span> <span class="n">sub_apps</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">route</span> <span class="ow">in</span> <span class="n">sub_app</span><span class="o">.</span><span class="n">routes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">route</span><span class="o">.</span><span class="n">path</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>      <span class="c1"># ← 问题在这一行</span>
+            <span class="k">continue</span>
+        <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">route</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">target</span><span class="o">.</span><span class="n">routes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">route</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>去重键只有 <code>path</code>。</strong> 于是当 <code>/history/{session_id}</code> 上的 <code>GET</code> 先被注册进 <code>seen</code>，后面同路径的 <code>DELETE</code> 就被当成「重复」整条跳过了。</p>
+<p>一行 <code>continue</code>，一个 HTTP 方法凭空消失。</p>
+<h2 id="_3">三、修法</h2>
+<p>去重键改成「路径 + 方法集合」：</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">_route_key</span><span class="p">(</span><span class="n">route</span><span class="p">):</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">route</span><span class="p">,</span> <span class="s2">"path"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">methods</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">route</span><span class="p">,</span> <span class="s2">"methods"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">()</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">methods</span><span class="p">)))</span>
+</code></pre></div>
+
+<p><code>methods</code> 在 Starlette 里是 <code>set</code>，必须 <code>sorted</code> 之后才能当键 —— 集合本身不可哈希，而且顺序不固定，直接用会让两次运行的行为不一致。</p>
+<p>合并时同时在启动日志里把结果打出来：</p>
+<div class="codehilite"><pre><span></span><code><span class="n">merged</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'+'</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">route</span><span class="o">.</span><span class="n">methods</span><span class="p">))</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">'MOUNT'</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+</code></pre></div>
+
+<p>修完之后启动日志里能看到同一路径的两行：</p>
+<div class="codehilite"><pre><span></span><code>GET /history/{session_id}
+DELETE /history/{session_id}
+</code></pre></div>
+
+<p><strong>这条日志本身就是最好的回归测试</strong> —— 下次谁再动合并逻辑，少一个方法一眼就能看出来。</p>
+<h2 id="_4">四、四条经验</h2>
+<p><strong>① 去重键是「资源 + 动作」，不是资源。</strong> 只要你的框架允许同一路径挂多个方法（FastAPI、Express、Flask 的 <code>methods=[...]</code> 都是），去重键就必须带上方法。</p>
+<p><strong>② 手动合并路由属于「框架没管的那部分」。</strong> <code>include_router</code> 帮你做合并时不会有这个问题；一旦自己写 <code>target.routes.append()</code>，就等于接手了框架的内部约束 —— 而这类约束<strong>不会报错，只会静默丢东西</strong>。</p>
+<p><strong>③ 405 一定要在看板上能看见。</strong> 前端把 <code>status</code> 吞成一句「操作失败」，等于把最有价值的线索扔了。至少打一条 <code>console.warn(status, url, method)</code>。</p>
+<p><strong>④ 一个路径挂多个方法时，补一条冒烟测试。</strong> 不用测业务逻辑，只测「路由表里有没有这个方法」：</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_history_has_both_methods</span><span class="p">():</span>
+    <span class="n">app</span> <span class="o">=</span> <span class="n">create_app</span><span class="p">()</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="p">{(</span><span class="n">r</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">app</span><span class="o">.</span><span class="n">routes</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s2">"methods"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">())}</span>
+    <span class="k">assert</span> <span class="p">(</span><span class="s2">"/history/</span><span class="si">{session_id}</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"GET"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">paths</span>
+    <span class="k">assert</span> <span class="p">(</span><span class="s2">"/history/</span><span class="si">{session_id}</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"DELETE"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">paths</span>
+</code></pre></div>
+
+<hr>
+<h2 id="_5">小结</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>容易误判成</th>
+<th>实际原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>前端弹「操作失败」</td>
+<td>后端抛异常</td>
+<td>405，请求没到处理函数</td>
+</tr>
+<tr>
+<td>日志里没有 500</td>
+<td>服务是好的</td>
+<td>路由层面就被拦掉了</td>
+</tr>
+<tr>
+<td>同路径 GET 正常</td>
+<td>路由注册没问题</td>
+<td>只有那一个方法被去重丢弃</td>
+</tr>
+</tbody>
+</table>
+<p>这类 bug 的共同点是<strong>静默</strong>：没有异常栈、没有错误日志，只有一个功能悄悄不工作。所以真正值得记的不是这一行的改法，而是那条纪律 —— <strong>凡是自己接管框架行为的地方，都要有一段能看见结果的日志或断言。</strong></p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">一、先定位到「请求根本没进来」</a></li>
+<li><a href="#_2">二、根因：合并路由时，去重键只用了一半</a></li>
+<li><a href="#_3">三、修法</a></li>
+<li><a href="#_4">四、四条经验</a></li>
+<li><a href="#_5">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

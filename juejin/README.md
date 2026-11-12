@@ -1,6 +1,6 @@
 # 掘金发布清单
 
-共 14 篇。**摘要必须在 50~100 字之间**，否则创建草稿会失败。
+共 17 篇。**摘要必须在 50~100 字之间**，否则创建草稿会失败。
 
 ## 发布方式
 
@@ -144,3 +144,30 @@ POST https://api.juejin.cn/content_api/v1/article/publish
 - **摘要**（72 字）：一个反直觉的实测结果：用户已经说出对象名字了，向量检索给出的却是另一门课，而且相似度分数高达 0.79。光看分数救不了 —— 这类问题必须靠路由解决。
 - **正文文件**：`juejin/rag-retrieval-routing.md`
 - **原文链接**：https://jiaiyi.github.io/posts/rag-retrieval-routing.html
+
+## 15. 给 Agent 划权限边界：全局只读、目录隔离、人工审批
+
+- **标题**：`给 Agent 划权限边界：全局只读、目录隔离、人工审批`
+- **分类**：人工智能
+- **标签**：Agent、权限、LangGraph、AI
+- **摘要**（65 字）：在 system prompt 里写「不要删数据库」不是权限，只是建议。真正管用的是三档边界：全局只读、目录隔离、高危动作前挂起等人批。
+- **正文文件**：`juejin/agent-permission-boundaries.md`
+- **原文链接**：https://jiaiyi.github.io/posts/agent-permission-boundaries.html
+
+## 16. FastAPI 合并子应用路由：去重键少写一个 methods，DELETE 就消失了
+
+- **标题**：`FastAPI 合并子应用路由：去重键少写一个 methods，DELETE 就消失了`
+- **分类**：后端
+- **标签**：FastAPI、Python、路由、后端
+- **摘要**（75 字）：历史记录能正常读出，点「清空对话」却只弹一句提示，服务端连 500 都没有。根因是合并子应用路由时去重键只用了路径，同一路径上的 DELETE 被整条丢掉了。
+- **正文文件**：`juejin/fastapi-route-merge-methods.md`
+- **原文链接**：https://jiaiyi.github.io/posts/fastapi-route-merge-methods.html
+
+## 17. 把 RAG 拆成两张 LangGraph 图：导入 9 节点，查询 10 节点
+
+- **标题**：`把 RAG 拆成两张 LangGraph 图：导入 9 节点，查询 10 节点`
+- **分类**：人工智能
+- **标签**：LangGraph、RAG、Agent、架构
+- **摘要**（63 字）：导入和查询被塞进同一张图之后，状态越来越大、重试粒度越来越粗、失败一次要重跑整条链路。拆成两张图之后，两边各自演进，互不牵连。
+- **正文文件**：`juejin/langgraph-two-graphs.md`
+- **原文链接**：https://jiaiyi.github.io/posts/langgraph-two-graphs.html

@@ -5,6 +5,24 @@
   <link>https://jiaiyi.github.io</link>
   <description>Windows 工具链、RAG 检索、向量库与 AI 编码助手的实战踩坑记录。</description>
   <item>
+    <title>把 RAG 拆成两张 LangGraph 图：导入 9 节点，查询 10 节点</title>
+    <link>https://jiaiyi.github.io/posts/langgraph-two-graphs.html</link>
+    <guid>https://jiaiyi.github.io/posts/langgraph-two-graphs.html</guid>
+    <description>导入和查询被塞进同一张图之后，状态越来越大、重试粒度越来越粗、失败一次要重跑整条链路。拆成两张图之后，两边各自演进，互不牵连。</description>
+  </item>
+  <item>
+    <title>FastAPI 合并子应用路由：去重键少写一个 methods，DELETE 就消失了</title>
+    <link>https://jiaiyi.github.io/posts/fastapi-route-merge-methods.html</link>
+    <guid>https://jiaiyi.github.io/posts/fastapi-route-merge-methods.html</guid>
+    <description>历史记录能正常读出，点「清空对话」却只弹一句提示，服务端连 500 都没有。根因是合并子应用路由时去重键只用了路径，同一路径上的 DELETE 被整条丢掉了。</description>
+  </item>
+  <item>
+    <title>给 Agent 划权限边界：全局只读、目录隔离、人工审批</title>
+    <link>https://jiaiyi.github.io/posts/agent-permission-boundaries.html</link>
+    <guid>https://jiaiyi.github.io/posts/agent-permission-boundaries.html</guid>
+    <description>在 system prompt 里写「不要删数据库」不是权限，只是建议。真正管用的是三档边界：全局只读、目录隔离、高危动作前挂起等人批。</description>
+  </item>
+  <item>
     <title>RAG 检索路由：为什么「精确问课程名」反而答错</title>
     <link>https://jiaiyi.github.io/posts/rag-retrieval-routing.html</link>
     <guid>https://jiaiyi.github.io/posts/rag-retrieval-routing.html</guid>

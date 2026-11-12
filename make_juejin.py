@@ -39,6 +39,9 @@ CATEGORY = {
     "pycharm-uv-interpreter":        "开发工具",
     "rag-chunking-tuning":           "人工智能",
     "rag-retrieval-routing":         "人工智能",
+    "fastapi-route-merge-methods":   "后端",
+    "langgraph-two-graphs":          "人工智能",
+    "agent-permission-boundaries":   "人工智能",
 }
 
 # 掘金侧更常被检索的补充标签
@@ -51,6 +54,9 @@ TAG_EXTRA = {
     "electron-launch-verify":  ["Electron"],
     "rag-chunking-tuning":     ["RAG"],
     "rag-retrieval-routing":   ["RAG"],
+    "fastapi-route-merge-methods": ["FastAPI"],
+    "langgraph-two-graphs":    ["LangGraph"],
+    "agent-permission-boundaries": ["Agent"],
 }
 
 MIN_BRIEF, MAX_BRIEF = 50, 100

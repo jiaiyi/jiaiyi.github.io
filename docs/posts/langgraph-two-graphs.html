@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>把 RAG 拆成两张 LangGraph 图：导入 9 节点，查询 10 节点 · 甲乙的技术笔记</title>
+<meta name="description" content="导入和查询被塞进同一张图之后，状态越来越大、重试粒度越来越粗、失败一次要重跑整条链路。拆成两张图之后，两边各自演进，互不牵连。">
+<meta name="author" content="甲乙的技术笔记">
+<meta name="color-scheme" content="light dark">
+<!-- pygments 在前、style 在后：让 style.css 的变量能覆盖代码块的默认底色 -->
+<link rel="stylesheet" href="/static/pygments.css">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml">
+<script>
+/* 主题：优先用户选择，否则跟随系统；显式写入 data-theme 让 CSS 只需一种选择器 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+</head>
+<body class="page-post">
+
+<nav class="topnav">
+  <a class="brand" href="/index.html">甲乙的技术笔记</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="https://github.com/jiaiyi/agent-skills">Skills</a>
+  <a class="nav-link" href="https://github.com/jiaiyi">GitHub</a>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="切换明暗主题" title="切换明暗主题">
+    <span class="i-sun">☀</span><span class="i-moon">☾</span>
+  </button>
+</nav>
+
+<main>
+
+<article class="post">
+  <a class="back" href="../index.html">← 返回列表</a>
+  <h1>把 RAG 拆成两张 LangGraph 图：导入 9 节点，查询 10 节点</h1>
+  <div class="meta">
+    <time>2026-11-12</time>
+    <span class="sep">·</span>
+    <span class="reading">5 分钟读完</span>
+    <span class="tag">LangGraph</span><span class="tag">RAG</span><span class="tag">Agent</span><span class="tag">架构</span>
+  </div>
+  <div class="content"><p>先说结论：<strong>「导入」和「查询」不是同一类工作</strong>，把它们塞进一张 LangGraph 图里，你一定会在三处难受 —— 状态膨胀、重试粒度错位、并发模型冲突。拆开之后，一切正常。</p>
+<p>这套系统里有两条链路：导入图 9 个节点，查询图 10 个节点。下面是拆分的理由和两张图的实际结构。</p>
+<!--more-->
+
+<h2 id="_1">一、为什么要拆</h2>
+<p>把两者摊开对比，差异是结构性的，不是风格问题：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>导入链路</th>
+<th>查询链路</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发</td>
+<td>人工上传文件，低频</td>
+<td>用户每句话，高频</td>
+</tr>
+<tr>
+<td>耗时</td>
+<td>分钟级，可后台跑</td>
+<td>必须秒级返回</td>
+</tr>
+<tr>
+<td>失败重试</td>
+<td>整个文件重跑可以接受</td>
+<td>单个检索分支重试，不能整条重来</td>
+</tr>
+<tr>
+<td>状态大小</td>
+<td>大（原文、切片、向量批次）</td>
+<td>小（问题、候选、答案）</td>
+</tr>
+<tr>
+<td>并发</td>
+<td>一次一个文件</td>
+<td>多用户并发</td>
+</tr>
+</tbody>
+</table>
+<p>一张图要同时满足「分钟级可重跑」和「秒级可并发」，只能两头糊。最直接的后果是 <strong>checkpointer 里存了整份文档切片</strong>，每次查询的快照都带着几十 MB 的导入中间态。</p>
+<h2 id="_2">二、导入图：条件边按文件类型分流</h2>
+<div class="codehilite"><pre><span></span><code>node_entry（识别类型/设开关）
+   ├─ pdf   → node_pdf_to_md ─┐
+   ├─ docx  → node_docx_to_md ─┼→ node_md_img → node_document_split
+   ├─ md + 题库 → node_question_parse ─┘              ↓
+   └─ 其余 → END                        node_item_name_recognition
+                                                    ↓
+                                        node_bge_embedding → node_import_milvus
+</code></pre></div>
+
+<p>三个设计点值得说：</p>
+<p><strong>① 入口只做「设开关」，不做解析。</strong> <code>node_entry</code> 按扩展名把 <code>is_pdf_read_enabled</code> 这类开关打开，后面的条件边只看开关。这样加一种新格式，只改入口一处，不动图结构。</p>
+<p><strong>② 题库必须自己一个节点。</strong> 题库 md 是固定形态（<code>### 题目编码</code> / <code>- **题型**: xxx</code> / <code>- **答案**: xxx</code>），不是散文。塞进通用切片链路会被切碎，答案和解析的对应关系会丢。它用逐行状态机解析，关键是 <strong>flush 时机</strong>：遇到新字段、新题目、新题库之前，必须先把上一个字段落进题目对象，否则每道题的最后一个字段都会被丢掉。</p>
+<p><strong>③ 最后一步必须幂等。</strong> <code>node_import_milvus</code> 按 <code>item_name</code> <strong>先删后插</strong>。同一个文件传两次，结果一样 —— 否则重跑一次导入，库里就多一份重复切片，检索时同样的内容占满 top-k。</p>
+<h2 id="_3">三、查询图：先路由，再并行，最后融合</h2>
+<div class="codehilite"><pre><span></span><code>node_item_name_confirm（LLM 判意图 + 主体对齐）
+   ├─ 命中结构化意图 → node_course_intro / node_question_search / node_chitchat
+   └─ 未命中 → 三路并行检索
+                 ├ node_search_embedding
+                 ├ node_search_embedding_hyde
+                 └ node_web_search_mcp
+                        ↓
+                  node_rrf（融合）→ node_rerank（重排）→ node_answer_output
+</code></pre></div>
+
+<p><strong>路由优先于检索。</strong> 「有哪些 Python 课」这类问题是结构化查询，走向量必然答错 —— 分数还未必低。所以先让 LLM 判意图，命中结构化分支就不进检索。</p>
+<p><strong>三路并行是 LangGraph 最有价值的地方。</strong> 稠密检索、HyDE 改写检索、联网检索互不依赖，同一个 superstep 里并发跑，总耗时约等于最慢的那一路，而不是三者相加。</p>
+<p><strong>RRF 融合不要手工调权重。</strong> 倒数排名融合只看名次不看分数，天然免疫「不同检索器分数量纲不一致」的问题：</p>
+<div class="codehilite"><pre><span></span><code>score(d) = Σ 1 / (k + rank_i(d))     k 一般取 60
+</code></pre></div>
+
+<p>融合之后再用 BGE-Reranker 做交叉重排，把 top-20 压到 top-5 喂给 LLM。</p>
+<h2 id="_4">四、拆图之后才看得见的三个坑</h2>
+<p><strong>① 主体名对齐会死循环。</strong> 用户打了个笔误，相似度 0.84，差 0.01 没到 0.85 的高置信阈值 → 系统反问 → 用户重复一遍 → 系统再反问，无限循环。</p>
+<p>修法是加一个「上一轮是否已经反问过」的判断：反问了就不再追问，降级为全库检索直接作答。</p>
+<p><strong>② 模型单例不是线程安全的。</strong> 并发请求下抛 <code>Cannot copy out of meta tensor</code>，日志里三行「开始初始化 BGE-M3」出现在<strong>同一毫秒</strong>。加双检锁：一把锁管初始化，一把锁管推理。</p>
+<p><strong>③ 两张图的状态千万不要共用一份 schema。</strong> 一旦共用，查询图的 checkpointer 会顺带把导入中间态序列化进去，快照体积和恢复时间都会失控。</p>
+<h2 id="_5">小结</h2>
+<table>
+<thead>
+<tr>
+<th>判断</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>两条链路耗时差一个数量级</td>
+<td>拆</td>
+</tr>
+<tr>
+<td>一条要重跑整条、一条要单点重试</td>
+<td>拆</td>
+</tr>
+<tr>
+<td>状态体积差十倍以上</td>
+<td>拆</td>
+</tr>
+<tr>
+<td>只是同一个流程里的不同分支</td>
+<td>不拆，用条件边</td>
+</tr>
+</tbody>
+</table>
+<p>拆图的成本是多写一个 <code>StateGraph</code> 和一份状态定义，收益是两张图可以各自演进 —— 导入链路加一种文件格式，不会碰到查询链路的任何一个节点。这在项目活过三个月之后，是最值钱的那部分。</p></div>
+</article>
+<aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
+<ul>
+<li><a href="#_1">一、为什么要拆</a></li>
+<li><a href="#_2">二、导入图：条件边按文件类型分流</a></li>
+<li><a href="#_3">三、查询图：先路由，再并行，最后融合</a></li>
+<li><a href="#_4">四、拆图之后才看得见的三个坑</a></li>
+<li><a href="#_5">小结</a></li>
+</ul>
+</div>
+</aside>
+<button id="to-top" class="to-top" aria-label="回到顶部" title="回到顶部">↑</button>
+</main>
+
+<footer>
+  <p>© 2026 甲乙的技术笔记<span class="sep">·</span><a href="/feed.xml">RSS</a></p>
+</footer>
+
+<script>
+/* 明暗主题切换（记忆偏好） */
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+  });
+})();
+
+/* 回到顶部：滚动超过一屏才出现 */
+(function () {
+  var b = document.getElementById('to-top');
+  if (!b) return;
+  var ticking = false;
+  function update() {
+    b.classList.toggle('show', window.scrollY > 520);
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+  b.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>
