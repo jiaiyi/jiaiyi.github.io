@@ -90,3 +90,8 @@ score(d) = Σ 1 / (k + rank_i(d))     k 一般取 60
 | 只是同一个流程里的不同分支 | 不拆，用条件边 |
 
 拆图的成本是多写一个 `StateGraph` 和一份状态定义，收益是两张图可以各自演进 —— 导入链路加一种文件格式，不会碰到查询链路的任何一个节点。这在项目活过三个月之后，是最值钱的那部分。
+
+---
+
+> 本文代码出自 [教育知识库 RAG 项目](https://gitee.com/chang-jiayi1/edu-rag)。
+> 其他项目与文章见[作品集](https://jiaiyi.github.io/portfolio.html)。

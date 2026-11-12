@@ -110,3 +110,8 @@ def test_history_has_both_methods():
 | 同路径 GET 正常 | 路由注册没问题 | 只有那一个方法被去重丢弃 |
 
 这类 bug 的共同点是**静默**：没有异常栈、没有错误日志，只有一个功能悄悄不工作。所以真正值得记的不是这一行的改法，而是那条纪律 —— **凡是自己接管框架行为的地方，都要有一段能看见结果的日志或断言。**
+
+---
+
+> 本文代码出自 [教育知识库 RAG 项目](https://gitee.com/chang-jiayi1/edu-rag)。
+> 其他项目与文章见[作品集](https://jiaiyi.github.io/portfolio.html)。

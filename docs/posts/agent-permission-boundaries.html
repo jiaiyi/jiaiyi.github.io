@@ -45,7 +45,7 @@
   <div class="meta">
     <time>2026-11-12</time>
     <span class="sep">·</span>
-    <span class="reading">6 分钟读完</span>
+    <span class="reading">7 分钟读完</span>
     <span class="tag">Agent</span><span class="tag">权限</span><span class="tag">LangGraph</span><span class="tag">AI</span>
   </div>
   <div class="content"><p>先说一个结论：<strong>在 system prompt 里写「不要删除数据库表」，不是权限，只是建议。</strong> 模型完全可以合理地把你的话理解成「这次用户明确要求了，那就删」，然后删掉。</p>
@@ -158,7 +158,12 @@
 <p>判断标准只有一条：<strong>出错了能不能撤销。</strong> 能撤销的，边界放宽到目录就够；不能撤销的，一律挂起等人。</p>
 <h2 id="_5">一个容易忽略的点</h2>
 <p>三档不是互斥的，是叠加的。一个真实的生产 Agent 通常是：<strong>目录隔离（二档）+ 高危工具审批（三档）</strong> —— 它只能在 <code>/workspace</code> 里折腾，但即使在 <code>/workspace</code> 里想删文件，也要人点头。</p>
-<p>先划边界，再让它干活。反过来的顺序，迟早要还。</p></div>
+<p>先划边界，再让它干活。反过来的顺序，迟早要还。</p>
+<hr>
+<blockquote>
+<p>示例代码出自 <a href="https://gitee.com/chang-jiayi1/deep-search">Deep Search 多智能体项目</a>。
+其他项目与文章见<a href="https://jiaiyi.github.io/portfolio.html">作品集</a>。</p>
+</blockquote></div>
 </article>
 <aside class="toc-wrap"><div class="toc-title">目录</div><div class="toc">
 <ul>

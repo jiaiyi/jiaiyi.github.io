@@ -126,3 +126,8 @@ for item in action_requests:
 三档不是互斥的，是叠加的。一个真实的生产 Agent 通常是：**目录隔离（二档）+ 高危工具审批（三档）** —— 它只能在 `/workspace` 里折腾，但即使在 `/workspace` 里想删文件，也要人点头。
 
 先划边界，再让它干活。反过来的顺序，迟早要还。
+
+---
+
+> 示例代码出自 [Deep Search 多智能体项目](https://gitee.com/chang-jiayi1/deep-search)。
+> 其他项目与文章见[作品集](https://jiaiyi.github.io/portfolio.html)。
